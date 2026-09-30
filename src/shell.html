@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Alien Shooter — Pixel Protocol</title>
+<style>
+  :root{
+    --amber:#ffb03a;
+    --cyan:#5fe0ff;
+    --red:#ff4438;
+    --green:#7ff06a;
+    --panel:rgba(9,13,18,.82);
+    --edge:rgba(120,170,210,.22);
+    --mono:"Consolas","SF Mono","DejaVu Sans Mono",monospace;
+    --disp:"Impact","Haettenschweiler","Arial Narrow Bold",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#05070a;color:#dfe8f2;
+    font-family:var(--mono);-webkit-font-smoothing:antialiased}
+  body.playing{cursor:none}
+  canvas#view{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  /* ---------------- HUD frame ---------------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+
+  .panel{background:var(--panel);border:1px solid var(--edge);
+    backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    box-shadow:0 6px 26px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05)}
+
+  /* bottom-left: vitals */
+  #vitals{position:absolute;left:18px;bottom:18px;width:290px;padding:12px 13px;border-radius:9px}
+  .barRow{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .barRow:last-child{margin-bottom:0}
+  .barLabel{font-size:10px;letter-spacing:.16em;color:#8fa4b8;width:46px;flex:none}
+  .barTrack{position:relative;flex:1;height:15px;background:rgba(0,0,0,.55);
+    border:1px solid rgba(140,180,215,.2);border-radius:3px;overflow:hidden}
+  .barTrack::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(90deg,transparent 0 11px,rgba(0,0,0,.42) 11px 13px)}
+  .barFill{height:100%;width:100%;transition:width .12s linear}
+  #healthFill{background:linear-gradient(90deg,#2fbf4a,#7ff06a)}
+  #armorFill{background:linear-gradient(90deg,#1f6fc0,#6fc8ff)}
+  .barVal{font-size:14px;font-weight:700;width:38px;text-align:right;flex:none;
+    font-variant-numeric:tabular-nums}
+  #dashRow .barTrack{height:5px}
+  #dashFill{background:linear-gradient(90deg,#4a7fa8,#8fd8ff)}
+
+  /* bottom-right: weapon */
+  #weaponBox{position:absolute;right:18px;bottom:18px;width:290px;padding:12px 13px;border-radius:9px;
+    text-align:right}
+  #weaponName{font-size:13px;letter-spacing:.13em;color:var(--amber);margin-bottom:2px}
+  #ammoLine{display:flex;justify-content:flex-end;align-items:baseline;gap:7px;
+    font-variant-numeric:tabular-nums}
+  .mag{font-size:40px;font-weight:700;line-height:1;color:#fff;font-family:var(--disp);
+    letter-spacing:.02em}
+  .mag.low{color:var(--amber)}
+  .mag.empty{color:var(--red);animation:blink .55s steps(2,end) infinite}
+  #ammoSep{font-size:20px;color:#5c6b7c}
+  #ammoReserve{font-size:20px;color:#9fb2c6}
+  #reloadBar{height:4px;background:rgba(0,0,0,.5);border-radius:2px;margin-top:7px;
+    overflow:hidden;opacity:0;transition:opacity .12s}
+  #reloadFill{height:100%;width:0;background:linear-gradient(90deg,#ffb03a,#ffe08a)}
+  #weaponRack{display:flex;gap:5px;justify-content:flex-end;margin-top:9px;flex-wrap:wrap}
+  .slot{display:flex;align-items:center;gap:4px;padding:3px 7px;border-radius:4px;
+    background:rgba(255,255,255,.05);border:1px solid transparent;font-size:10px;color:#7f8ea0}
+  .slot .num{color:#556579;font-size:9px}
+  .slot.active{background:rgba(255,176,58,.17);border-color:rgba(255,176,58,.55);color:#ffd28a}
+  .slot.active .num{color:var(--amber)}
+
+  /* top-left: wave + score */
+  #topLeft{position:absolute;left:18px;top:18px;padding:11px 14px;border-radius:9px;min-width:210px}
+  #waveLine{display:flex;align-items:baseline;gap:8px}
+  #waveLabel{font-size:10px;letter-spacing:.2em;color:#8fa4b8}
+  #waveNum{font-family:var(--disp);font-size:30px;line-height:1;color:#fff}
+  #waveInfo{font-size:10.5px;color:var(--red);letter-spacing:.09em;margin-top:3px}
+  .statRow{display:flex;gap:14px;margin-top:9px;padding-top:8px;
+    border-top:1px solid rgba(140,180,215,.14)}
+  .stat{font-size:10px;color:#8fa4b8;letter-spacing:.08em}
+  .stat b{display:block;font-size:14px;color:#e8f0f8;font-weight:600;margin-top:1px;
+    font-variant-numeric:tabular-nums}
+
+  /* top-right: minimap */
+  #mapBox{position:absolute;right:18px;top:18px;padding:7px;border-radius:9px}
+  #minimap{display:block;width:172px;height:172px;border-radius:4px;background:#070a0d}
+  #fpsBox{text-align:right;font-size:9px;color:#5c6b7c;margin-top:4px;letter-spacing:.1em}
+
+  /* boss bar */
+  #bossWrap{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:min(560px,52vw);
+    opacity:0;transition:opacity .3s;text-align:center}
+  #bossWrap.show{opacity:1}
+  #bossName{font-family:var(--disp);font-size:17px;letter-spacing:.16em;color:#ff6aa8;
+    text-shadow:0 0 16px rgba(255,62,160,.6);margin-bottom:4px}
+  #bossTrack{height:11px;background:rgba(0,0,0,.7);border:1px solid rgba(255,62,160,.4);
+    border-radius:3px;overflow:hidden}
+  /* Damage readouts. pointer-events stay off the whole layer: a number must
+     never be something the player can accidentally click through to. */
+  #dmgLayer{position:fixed;inset:0;z-index:12;pointer-events:none;overflow:hidden}
+  .dmgNum{position:absolute;transform:translate(-50%,-50%);font-family:var(--mono);
+    font-size:15px;font-weight:bold;color:#e8f5ff;text-shadow:0 0 6px #041216,0 2px 0 #041216;
+    letter-spacing:.04em;white-space:nowrap}
+  .dmgNum.crit{font-size:22px;color:var(--amber);text-shadow:0 0 10px #ffb03a88,0 2px 0 #041216}
+  #bossWrap.shielded #bossFill{background:linear-gradient(90deg,#4a5a20,#c6ff4a)}
+  #bossWrap.shielded #bossName{color:#c6ff4a}
+  #bossFill{height:100%;width:100%;background:linear-gradient(90deg,#8a1040,#ff3ea0);
+    transition:width .18s}
+
+  /* centre banner */
+  #bannerWrap{position:absolute;top:27%;left:0;right:0;text-align:center;opacity:0;
+    transform:translateY(14px);transition:opacity .3s,transform .3s}
+  #bannerWrap.show{opacity:1;transform:translateY(0)}
+  #banner{font-family:var(--disp);font-size:48px;letter-spacing:.1em;color:#fff;
+    text-shadow:0 0 30px rgba(255,120,40,.65),0 4px 12px rgba(0,0,0,.9)}
+  #bannerSub{font-size:12px;letter-spacing:.24em;color:var(--amber);margin-top:5px}
+
+  /* crosshair + hit marker */
+  #crosshair{position:absolute;width:34px;height:34px;transform:translate(-50%,-50%);
+    --spread:8px}
+  #crosshair i{position:absolute;background:rgba(255,255,255,.9);
+    box-shadow:0 0 5px rgba(0,0,0,.9)}
+  #crosshair i:nth-child(1){left:50%;top:calc(50% - var(--spread) - 9px);width:1.5px;height:8px;margin-left:-.75px}
+  #crosshair i:nth-child(2){left:50%;top:calc(50% + var(--spread) + 1px);width:1.5px;height:8px;margin-left:-.75px}
+  #crosshair i:nth-child(3){top:50%;left:calc(50% - var(--spread) - 9px);height:1.5px;width:8px;margin-top:-.75px}
+  #crosshair i:nth-child(4){top:50%;left:calc(50% + var(--spread) + 1px);height:1.5px;width:8px;margin-top:-.75px}
+  #crosshair b{position:absolute;left:50%;top:50%;width:2px;height:2px;margin:-1px 0 0 -1px;
+    background:rgba(255,80,60,.95);border-radius:50%}
+  #hitmark{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    font-size:22px;line-height:1;opacity:0;transition:opacity .07s;color:#fff;
+    text-shadow:0 0 6px rgba(0,0,0,.9)}
+
+  /* damage vignette */
+  #vignette{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:9;
+    background:radial-gradient(ellipse at center,transparent 34%,rgba(150,10,10,.5) 78%,rgba(120,0,0,.85) 100%)}
+
+  /* pickup popups */
+  #popups{position:absolute;left:50%;top:58%;transform:translateX(-50%);text-align:center;width:340px}
+  .popup{display:none;font-size:14px;font-weight:700;letter-spacing:.1em;
+    text-shadow:0 2px 8px rgba(0,0,0,.9)}
+  @keyframes popup{
+    0%{opacity:0;transform:translateY(10px) scale(.9)}
+    18%{opacity:1;transform:translateY(0) scale(1)}
+    100%{opacity:0;transform:translateY(-34px) scale(1)}
+  }
+  @keyframes blink{50%{opacity:.25}}
+
+  /* ---------------- screens ---------------- */
+  .screen{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center,rgba(8,12,18,.86),rgba(3,5,8,.97));
+    backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .screen.show{display:flex}
+  .card{width:min(660px,92vw);padding:34px 38px;border-radius:14px;text-align:center;
+    background:linear-gradient(180deg,rgba(16,22,30,.95),rgba(9,12,17,.95));
+    border:1px solid rgba(120,170,210,.22);
+    box-shadow:0 24px 70px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.06)}
+  .title{font-family:var(--disp);font-size:62px;line-height:.95;letter-spacing:.04em;
+    background:linear-gradient(180deg,#fff 12%,#ffb03a 62%,#c4451a 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 5px 18px rgba(255,110,30,.35))}
+  .sub{font-size:11px;letter-spacing:.4em;color:#8fa4b8;margin-top:6px}
+  .rule{height:1px;margin:22px 0;background:linear-gradient(90deg,transparent,rgba(140,180,215,.35),transparent)}
+  .keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:9px 16px;
+    text-align:left;font-size:11px;color:#93a6ba}
+  .keys div{display:flex;justify-content:space-between;gap:8px;
+    padding:5px 8px;background:rgba(255,255,255,.032);border-radius:5px}
+  .keys kbd{font-family:var(--mono);background:rgba(150,190,225,.13);color:#dfe8f2;
+    border:1px solid rgba(150,190,225,.22);border-radius:3px;padding:1px 6px;font-size:10px}
+  .btn{pointer-events:auto;margin-top:24px;font-family:var(--disp);font-size:21px;letter-spacing:.16em;
+    color:#170d04;background:linear-gradient(180deg,#ffc85a,#ef8b1e);
+    border:none;border-radius:8px;padding:13px 44px;cursor:pointer;
+    box-shadow:0 7px 22px rgba(240,140,30,.34), inset 0 1px 0 rgba(255,255,255,.45);
+    transition:transform .1s,box-shadow .16s}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(240,140,30,.48), inset 0 1px 0 rgba(255,255,255,.45)}
+  .btn:active{transform:translateY(0)}
+  .btn.ghost{background:transparent;color:#9fb2c6;border:1px solid rgba(140,180,215,.3);
+    box-shadow:none;font-size:15px;padding:10px 26px;margin-left:10px}
+  .btn.ghost:hover{color:#fff;border-color:rgba(140,180,215,.6);box-shadow:none}
+  .results{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin:22px 0 4px}
+  .results div{padding:11px 6px;background:rgba(255,255,255,.04);border-radius:7px;
+    border:1px solid rgba(140,180,215,.12)}
+  .results span{display:block;font-size:9.5px;letter-spacing:.15em;color:#8fa4b8}
+  .results b{display:block;font-size:23px;color:#fff;margin-top:3px;font-family:var(--disp);
+    letter-spacing:.03em}
+  .dead{font-family:var(--disp);font-size:56px;letter-spacing:.06em;color:var(--red);
+    text-shadow:0 0 34px rgba(255,40,30,.55)}
+  #loading{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    background:#05070a;color:#8fa4b8;font-size:11px;letter-spacing:.3em}
+  .err{color:#ff6a5a;text-align:center;line-height:1.7;letter-spacing:.06em}
+  .hint{font-size:10px;color:#6b7b8d;letter-spacing:.18em;margin-top:16px}
+
+  /* ---------------- customizer ---------------- */
+  #custScreen{align-items:stretch;justify-content:stretch;gap:0}
+  #custLeft{flex:1;display:flex;align-items:center;justify-content:center;min-width:0}
+  #custView{width:min(46vw,640px);height:min(78vh,720px);border-radius:12px;cursor:grab;
+    background:radial-gradient(ellipse at 50% 30%,#101821,#070a0e 75%)}
+  #custView:active{cursor:grabbing}
+  #custRight{width:min(360px,40vw);flex:none;padding:26px 24px;overflow-y:auto;
+    background:linear-gradient(180deg,rgba(16,22,30,.96),rgba(9,12,17,.96));
+    border-left:1px solid rgba(120,170,210,.22);display:flex;flex-direction:column}
+  #custTitle{font-family:var(--disp);font-size:30px;letter-spacing:.08em;color:#fff}
+  #custSub{font-size:10px;letter-spacing:.32em;color:#8fa4b8;margin:4px 0 18px}
+  .custRow{margin-bottom:13px}
+  .custLabel{display:block;font-size:9.5px;letter-spacing:.2em;color:#8fa4b8;margin-bottom:6px}
+  .custSwatches{display:flex;flex-wrap:wrap;gap:6px}
+  .swatch{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.18);
+    cursor:pointer;transition:transform .1s}
+  .swatch:hover{transform:scale(1.12)}
+  .swatch.sel{border-color:var(--amber);box-shadow:0 0 0 2px rgba(255,176,58,.35)}
+  .pill{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:#9fb2c6;
+    background:rgba(255,255,255,.05);border:1px solid transparent;border-radius:4px;
+    padding:5px 10px;cursor:pointer}
+  .pill:hover{color:#fff}
+  .pill.sel{background:rgba(255,176,58,.17);border-color:rgba(255,176,58,.55);color:#ffd28a}
+  #custBtns{margin-top:auto;padding-top:18px;display:flex;flex-direction:column;gap:9px}
+  #custBtns .btn{margin-top:0;font-size:16px;padding:10px 20px}
+  #custBtns .btn.ghost{margin-left:0}
+  #custHint{font-size:9px;color:#5c6b7c;letter-spacing:.16em;text-align:center}
+  @media (max-width:900px){
+    #custScreen{flex-direction:column;overflow-y:auto}
+    #custRight{width:100%;border-left:none;border-top:1px solid rgba(120,170,210,.22)}
+    #custView{width:86vw;height:44vh}
+  }
+
+  @media (max-width:900px){
+    #vitals,#weaponBox{width:210px}
+    #minimap{width:118px;height:118px}
+    .title{font-size:44px}
+    .mag{font-size:31px}
+  }
+  /* Eclipse / field terminal */
+  :root{--amber:#ffc271;--cyan:#7cf4df;--panel:rgba(8,17,22,.88);--edge:rgba(139,204,199,.2);--disp:"Impact","Arial Narrow",sans-serif}
+  button,input{font:inherit}button:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:5px}
+  /* Navigation highlight. Explicit rather than :focus-visible because a pad
+     produces no keyboard event, and the browser heuristic then leaves a
+     focused button looking unfocused. */
+  .navHere{outline:2px solid var(--cyan);outline-offset:5px;box-shadow:0 0 0 7px #7cf4df1c}
+  .upgrade .navHere,.perk .navHere,.station .navHere,.bindRow .navHere{outline-offset:3px}
+  .pin.navHere{outline-offset:2px}
+  button:disabled{cursor:default;opacity:.38;transform:none!important;box-shadow:none!important}
+  body:not(.playing) #crosshair{display:none}
+  #crosshair i{background:currentColor}
+  body:not(.playing) #hud{visibility:hidden}
+  .barFill{display:block}
+  .panel{border-radius:2px!important;border-top:2px solid rgba(124,244,223,.46);box-shadow:0 10px 35px #0006}
+  #topLeft{top:28px;left:28px;min-width:228px;padding:14px 16px}
+  #waveLabel{letter-spacing:.14em}#waveNum{font-family:var(--mono);font-size:26px}
+  #waveInfo{font-size:10px;color:var(--amber);letter-spacing:.025em}
+  #vitals{left:28px;bottom:28px;width:278px;padding:15px}
+  #weaponBox{right:28px;bottom:28px;width:310px;padding:15px}
+  .barLabel{width:52px;font-size:9px;letter-spacing:.08em}
+  #grenadeRow .barTrack{height:5px}#grenadeFill{background:var(--amber)}
+  #grenadeText{font-size:10px;color:var(--amber)}
+  #mapBox{right:28px;top:28px;padding:10px}
+  #minimap{width:154px;height:154px;border-radius:0}
+  .micro{font-size:9px;letter-spacing:.16em;color:#8ca4a7;text-transform:uppercase}
+  .mapHeading{display:flex;justify-content:space-between;margin-bottom:8px}
+  .liveDot{width:5px;height:5px;background:var(--cyan);border-radius:50%;display:inline-block;box-shadow:0 0 9px var(--cyan);margin-right:6px}
+  #missionStrip{position:absolute;top:32px;left:50%;transform:translateX(-50%);text-align:center;max-width:42vw}
+  #sectorName{display:block;font-size:14px;letter-spacing:.22em;color:#dffbf6;margin:7px 0}
+  #sectorObjective{font-size:10px;color:#91b4b4;letter-spacing:.03em}
+  #bossWrap{top:110px;width:min(440px,43vw)}
+  #banner{font-family:var(--mono);font-size:clamp(24px,4vw,46px);font-weight:800;letter-spacing:.06em;text-shadow:0 4px 24px #000}
+  #bannerSub{font-size:11px;letter-spacing:.08em;text-shadow:0 2px 10px #000}
+  #bannerWrap{top:30%}
+  #fieldPrompt{position:absolute;bottom:35px;left:50%;transform:translateX(-50%);text-align:center;font-size:10px;color:#a9c9c7;line-height:2.2}
+  #fieldPrompt strong{display:block;color:var(--amber);font-size:11px;font-weight:400}
+  #fieldPrompt kbd{border:1px solid #536663;padding:3px 6px;color:#effffb}
+  #buildStrip{position:absolute;right:18px;top:176px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;
+    opacity:0;transition:opacity .25s;pointer-events:none;max-width:172px}
+  #buildStrip.active{opacity:1}
+  #buildStrip .buildHead{font-size:8px;letter-spacing:.14em;color:#6e9693}
+  #buildChips{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end}
+  .buildChip{display:flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;line-height:1;
+    padding:3px 5px;background:#08151999;border:1px solid var(--rarity);color:var(--rarity)}
+  .buildChip b{font-weight:400;color:#cfe6dd;font-size:8px}
+  #comboBox{position:absolute;left:30px;top:184px;opacity:0;transition:opacity .2s;width:150px}
+  #comboBox.active{opacity:1}#comboCount{color:var(--amber);font-size:26px;font-weight:bold}
+  #comboLabel{font-size:9px;letter-spacing:.12em;color:#c1d1cb;margin:4px 0 8px}
+  #comboTrack{height:2px;background:#ffffff1a}#comboFill{height:100%;background:var(--amber)}
+  .slot{border-radius:0;padding:3px 5px;font-size:9px}.slot.active{background:#7cf4df18;border-color:#7cf4df66;color:var(--cyan)}
+  .mag{font-family:var(--mono);font-size:38px;letter-spacing:-.06em}
+  .screen{background:radial-gradient(ellipse at 60% 30%,#0c2427b5,#03090ee8 80%);overflow-y:auto;padding:28px;cursor:auto}
+  .card{border-radius:3px;background:linear-gradient(145deg,#102025f5,#070e13f5);border-color:#aacfc42b;padding:34px}
+  .title{font-size:clamp(42px,7vw,88px);color:#edf7ef;background:none;filter:none;letter-spacing:.015em;line-height:.9}
+  .title em{font-style:normal;color:var(--cyan)}
+  .sub{letter-spacing:.3em;font-size:10px;color:#92aaa8}
+  .btn{border-radius:2px;font-family:var(--mono);font-size:13px;font-weight:bold;letter-spacing:.14em;background:var(--cyan);color:#071814;box-shadow:0 4px 26px #7cf4df18;padding:17px 28px}
+  .btn:hover{box-shadow:0 4px 30px #7cf4df44}.btn.ghost{font-family:var(--mono);font-size:11px;padding:16px 21px;color:#c4d9d2}
+  .hint{line-height:1.7;letter-spacing:.07em;color:#78928e}
+  #start{padding:40px 6vw;background:linear-gradient(90deg,#02090ef2,#040d16cf 55%,#04121660);justify-content:flex-start;align-items:center}
+  .briefing{width:min(1190px,100%);margin:auto;display:grid;grid-template-columns:1.15fr .85fr;gap:8vw;align-items:center}
+  .eyebrow{font-size:10px;letter-spacing:.28em;color:var(--cyan);margin-bottom:26px;display:flex;align-items:center;gap:9px}
+  .eyebrow::before{content:'';width:25px;height:1px;background:var(--cyan)}
+  .edition{font-size:clamp(14px,2vw,21px);letter-spacing:.31em;color:var(--amber);margin:15px 0 25px}
+  .intro{font-family:system-ui,sans-serif;font-size:14px;line-height:1.8;color:#adbfbc;max-width:440px}
+  .menuActions{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0 8px}.menuActions .btn{margin-left:0}
+  .briefingAside{border:1px solid #86c4b92d;background:#07171bbb;position:relative;padding:25px;box-shadow:0 20px 100px #0005}
+  .briefingAside::before{content:'';position:absolute;top:-1px;left:-1px;width:44px;height:2px;background:var(--cyan)}
+  .terminalHeading{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #b4ded421;padding-bottom:15px;margin-bottom:20px;font-size:10px;letter-spacing:.1em;color:#c9dfd6}
+  .terminalHeading span:last-child{color:var(--cyan);font-size:9px}
+  .sectorRoute{display:flex;align-items:stretch;margin-bottom:24px;gap:8px}
+  .routeNode{flex:1;padding:12px 8px;border:1px solid #82f7e234;background:linear-gradient(135deg,#62f9d609,transparent)}
+  .routeNode:nth-child(2){border-color:#c78dff40}.routeNode:nth-child(3){border-color:#ffc27140}
+  .routeNode b{display:block;font-size:26px;font-weight:400;color:var(--cyan);margin-bottom:8px}
+  .routeNode:nth-child(2) b{color:#c7a3ff}.routeNode:nth-child(3) b{color:var(--amber)}
+  .routeNode span{font-size:8px;letter-spacing:.08em;color:#cfdfd6}.routeNode small{display:block;font-size:8px;color:#6e9693;margin-top:5px}
+  .keys{gap:5px 12px;grid-template-columns:1fr 1fr}.keys div{background:none;border-radius:0;padding:7px 0;border-bottom:1px solid #8bbdb512;color:#91ada8;font-size:10px}
+  .keys kbd{font-size:9px;border-radius:1px;white-space:nowrap;background:#a3dbce09}
+  .briefFooter{display:flex;justify-content:space-between;border-top:1px solid #accfc21c;padding-top:16px;margin-top:24px;font-size:9px;letter-spacing:.1em;color:#6c8e89}
+  .briefFooter b{color:var(--amber);font-weight:400}
+  #upgradeScreen .card{width:min(940px,96vw);text-align:left}
+  .upgradeHeader{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+  .upgradeHeader h2{font-family:var(--mono);font-size:23px;letter-spacing:.06em}.upgradeHeader b{font-size:24px;color:var(--amber)}
+  /* Four slots as two rows of two, not three in a row and a stray fourth.
+     The wider card is what makes room for the weapon portrait. */
+  #upgradeGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .gunShot{height:100px;margin:-4px 0 10px;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 60%,#0d2a3055,#07161a00 70%);border-radius:4px}
+  .gunShot img{height:100px;width:auto;image-rendering:pixelated;filter:drop-shadow(0 3px 7px #000a)}
+  .heldShot{height:22px;width:auto;image-rendering:pixelated;vertical-align:middle;margin-right:5px}
+  .upgrade{background:#081519;border:1px solid #b6e4d624;padding:17px;text-align:left;position:relative;display:flex;flex-direction:column}
+  .upgrade.locked{border-color:var(--amber)}
+  .upgrade.sold,.upgrade.empty{opacity:.42}
+  .upgrade .pin{position:absolute;top:9px;right:9px;background:none;border:none;color:var(--amber);
+    font-size:15px;line-height:1;cursor:pointer;padding:2px 4px;font-family:var(--mono)}
+  .upgrade .pin:hover{color:#fff}
+  #shopArsenalRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;
+    border-top:1px solid #accfc21c;padding-top:14px;font-size:9px;letter-spacing:.1em;color:#7e9c95}
+  #shopArsenal{display:flex;gap:6px;flex-wrap:wrap}
+  .held{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:#cfe6dd;
+    border:1px solid #b6e4d62e;padding:3px 4px 3px 7px}
+  .held.empty{color:#6e9693;padding:3px 7px}
+  .held button{background:none;border:1px solid #8fd8ff44;color:#8fd8ff;font-family:var(--mono);
+    font-size:8px;padding:2px 5px;cursor:pointer}
+  .held button:hover{border-color:#8fd8ff;color:#fff}
+  #shopSlots{color:var(--amber)}
+  #shopReroll{margin-top:14px}
+  #shopReroll[disabled]{opacity:.4}
+  .upgradeIcon{font-size:27px;color:var(--cyan);margin-bottom:15px;height:100px;display:flex;align-items:center}.upgrade h3{font-size:10px;color:#e5f6ed;letter-spacing:.06em}
+  .upgrade p{font-family:system-ui,sans-serif;font-size:11px;line-height:1.6;color:#92b0a8;margin:10px 0;min-height:36px}
+  .upgrade small{font-size:9px;color:#78958c}.upgrade button{margin-top:14px;padding:10px;width:100%;font-size:11px}
+  #perkScreen .card{width:min(880px,96vw);text-align:left}
+  #perkGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .perk{background:#081519;border:1px solid var(--rarity);padding:17px 17px 15px;text-align:left;position:relative;
+    display:flex;flex-direction:column;box-shadow:inset 0 0 0 1px #0c1d2233}
+  .perk:before{content:'';position:absolute;inset:0;background:var(--rarity);opacity:.05;pointer-events:none}
+  .perkKey{position:absolute;top:10px;right:11px;font-family:var(--mono);font-size:10px;color:var(--rarity);opacity:.75;
+    border:1px solid var(--rarity);padding:1px 6px}
+  .perkIcon{font-size:27px;color:var(--rarity);margin-bottom:13px;line-height:1}
+  .perk h3{font-size:10px;color:#e5f6ed;letter-spacing:.06em;margin-bottom:8px}
+  .perkTags{display:flex;flex-wrap:wrap;gap:4px;min-height:14px}
+  .perkTags em{font-style:normal;font-size:8px;letter-spacing:.08em;color:#9fc4ba;border:1px solid #b6e4d62e;padding:1px 5px}
+  .perk p{font-family:system-ui,sans-serif;font-size:11px;line-height:1.6;color:#92b0a8;margin:9px 0;min-height:52px}
+  .perk small{font-size:9px;color:#78958c;letter-spacing:.08em}
+  .perk button{margin-top:13px;padding:10px;width:100%;font-size:11px}
+  .perkBuild{font-family:system-ui,sans-serif;font-size:10px;color:#7e9c95;margin-top:18px;line-height:1.7;
+    border-top:1px solid #accfc21c;padding-top:14px}
+  #stationScreen .card{width:min(880px,96vw);text-align:left}
+  #stationGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .station{background:#081519;border:1px solid #b6e4d624;padding:17px;text-align:left;display:flex;flex-direction:column}
+  .station.owned{border-color:#8fd8c866}
+  .stationIcon{font-size:25px;color:var(--amber);margin-bottom:12px;line-height:1}
+  .station h3{font-size:10px;color:#e5f6ed;letter-spacing:.06em}
+  .station p{font-family:system-ui,sans-serif;font-size:11px;line-height:1.6;color:#92b0a8;margin:9px 0;min-height:52px}
+  .stationRank{display:flex;gap:3px;margin-bottom:9px}
+  .stationRank i{width:11px;height:4px;background:#1d3138;display:block}
+  .stationRank i.on{background:var(--amber)}
+  .station button{margin-top:auto;padding:10px;width:100%;font-size:11px}
+  .victoryTitle{font-family:var(--mono);font-size:40px;letter-spacing:0;color:var(--amber);line-height:1.05}
+  #victory .sub{color:#9fd4c4}
+  .victoryBuild{font-family:system-ui,sans-serif;font-size:10px;line-height:1.7;color:#7e9c95;
+    border-top:1px solid #accfc21c;padding-top:14px;margin-top:18px}
+  #victory .btn.ghost{margin-left:0}
+  .stationBank{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.1em;color:#7e9c95;
+    border-top:1px solid #accfc21c;padding-top:14px;margin-top:18px}
+  .stationBank b{color:var(--amber);font-weight:400}
+  #bindPanel{margin:18px 0;text-align:left;max-height:34vh;overflow-y:auto;border-top:1px solid #accfc21c;
+    border-bottom:1px solid #accfc21c;padding:12px 0}
+  .bindRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0;font-size:10px;color:#afc6be}
+  .bindRow b{font-weight:400;color:#cfe6dd;flex:1}
+  .bindRow .codes{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+  .bindRow kbd{font-size:9px;white-space:nowrap}
+  .bindRow button{background:none;border:1px solid #8fd8ff44;color:#8fd8ff;font-family:var(--mono);
+    font-size:9px;padding:3px 8px;cursor:pointer}
+  .bindRow button:hover{border-color:#8fd8ff;color:#fff}
+  .bindRow.listening button{border-color:var(--amber);color:var(--amber)}
+  .bindHint{font-size:9px;color:#6e9693;margin-top:10px;letter-spacing:.08em}
+  /* On-screen keyboard. The callsign is the only text in the game, and on a
+     pad there is nothing else to type it with. */
+  #oskScreen .card{max-width:780px}
+  #oskValue{font-family:var(--mono);font-size:21px;letter-spacing:.16em;color:var(--cyan);
+    border:1px solid #accfc233;padding:14px;margin:14px 0;min-height:28px;word-break:break-all;text-align:left}
+  #oskValue .placeholder{opacity:.35}
+  #oskCount{float:right;font-size:11px;color:#6e9693;letter-spacing:.08em}
+  #oskKeys{display:flex;flex-direction:column;gap:6px;align-items:center;margin-bottom:14px}
+  .oskRow{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+  #oskKeys button{width:44px;height:44px;font-family:var(--mono);font-size:15px;
+    background:#0b1a1ecc;border:1px solid #accfc233;color:#cfe6dd;cursor:pointer}
+  #oskKeys button:hover{border-color:var(--cyan);color:#fff}
+  .oskActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .oskActions button{font-family:var(--mono);font-size:12px;letter-spacing:.1em;padding:12px 18px;
+    background:none;border:1px solid #8fd8ff44;color:#8fd8ff;cursor:pointer}
+  .oskActions button:hover{border-color:#8fd8ff;color:#fff}
+  #oskDone{background:var(--cyan);color:#071814;border-color:var(--cyan)}
+  #custKeyboard{margin-top:10px}
+  .settings{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:25px 0;text-align:left}
+  .settings label{font-size:10px;color:#afc6be;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.settings input[type=range]{width:100%;accent-color:var(--cyan)}
+  .settings input[type=checkbox]{accent-color:var(--cyan)}
+  #pause .title{font-family:var(--mono);font-size:34px!important}.dead{font-family:var(--mono);font-size:40px;letter-spacing:0}
+  #loading{color:var(--cyan);background:radial-gradient(ellipse,#102127,#04090d);letter-spacing:.2em}
+  #custScreen{padding:0}.results{gap:6px}.results span{font-size:8px;letter-spacing:.02em}
+  @media(max-width:1000px){.briefing{gap:4vw}.briefingAside{padding:18px}.title{font-size:65px}#fieldPrompt{bottom:160px}#vitals,#weaponBox{width:245px}.edition{font-size:15px;letter-spacing:.22em}}
+  @media(max-width:740px){#oskKeys button{width:34px;height:38px;font-size:13px}#start{padding:28px}.briefing{grid-template-columns:1fr;gap:24px}.title{font-size:56px}.eyebrow{margin-bottom:18px}.intro{font-size:12px}.briefingAside{padding:18px}.sectorRoute{margin-bottom:15px}.btn{margin-top:12px}.edition{margin:12px 0 18px}#topLeft{top:12px;left:12px;min-width:180px;padding:10px}#mapBox{right:12px;top:12px}#minimap{width:100px;height:100px}#missionStrip{top:160px;max-width:80vw;width:80vw}#sectorName{font-size:11px}#vitals{left:12px;bottom:12px;width:200px;padding:10px}#weaponBox{right:12px;bottom:12px;width:220px;padding:10px}#fieldPrompt{bottom:156px}#comboBox{top:230px;left:15px}#buildStrip{display:none}#bossWrap{top:205px;width:60vw}#upgradeGrid{grid-template-columns:1fr}.gunShot,.gunShot img{height:76px}#perkGrid,#stationGrid{grid-template-columns:1fr}.perk p{min-height:0}.upgradeHeader h2{font-size:17px}.card{padding:22px}.screen{padding:14px}}
+  @media(max-height:740px) and (min-width:741px){#start{padding-top:24px;padding-bottom:24px}.briefingAside{padding:20px}.eyebrow{margin-bottom:20px}.title{font-size:72px}.sectorRoute{margin-bottom:14px}.keys div{padding:5px 0}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  /* Pixel Protocol operator station */
+  #callsignHud{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #7cf4df26;margin-bottom:13px;padding-bottom:10px}
+  #playerCallsign{color:var(--cyan);font-size:12px;font-weight:bold;letter-spacing:.12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+  #playerNameTag{position:absolute;color:#c8fff0;background:#06161cca;border:1px solid #8fead34d;padding:3px 7px;font-size:9px;letter-spacing:.08em;transform:translate(-50%,-100%);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000}
+  #custLeft{position:relative;flex-direction:column;background:radial-gradient(ellipse at 50% 48%,#153132,#050c12 72%)}
+  #custLeft::before{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(#77efdb04 1px,transparent 1px),linear-gradient(90deg,#77efdb04 1px,transparent 1px);background-size:36px 36px}
+  #custView{width:min(54vw,740px);height:min(69vh,760px);border-radius:0;background:none;touch-action:none}
+  .operatorCaption{z-index:1;text-align:center;padding:16px 20px 22px;max-width:100%;overflow-wrap:anywhere}
+  .operatorCaption .micro{font-size:9px;color:#69968f}.operatorCaption h2{font-family:var(--mono);color:var(--cyan);font-size:30px;letter-spacing:.18em;margin:8px 0 10px}
+  .operatorCaption p{font-size:10px;color:#839f98;letter-spacing:.08em}
+  #custRight{width:min(440px,43vw);padding:26px;gap:0}
+  .identityField{display:block;margin:8px 0 20px;padding:14px;border:1px solid #83e4c83d;background:#79f6dc05}
+  .identityHeading{display:flex;justify-content:space-between;margin-bottom:9px;font-size:9px;letter-spacing:.12em;color:#b6d6ca}
+  #custNickname{width:100%;background:#061318;border:1px solid #76ad9f4d;border-radius:0;padding:11px 12px;color:#ddfff1;font-size:16px;font-family:var(--mono);letter-spacing:.08em}
+  .identityField small{display:block;font-size:9px;line-height:1.6;color:#6c9f90;margin-top:8px}
+  .custSection{margin-bottom:20px;padding-top:13px;border-top:1px solid #9ccbbc26}
+  .custSectionHeading{font-size:10px;letter-spacing:.14em;color:var(--cyan);margin-bottom:14px;font-weight:bold}
+  .custSectionNote{font-size:9px;line-height:1.6;color:#82a897;margin:8px 0}
+  #custBtns{position:sticky;bottom:-26px;background:linear-gradient(transparent,#091318 18%);padding:22px 0 17px}
+  #custRight .swatch{border-radius:3px;width:25px;height:25px}.pill{border-radius:1px}
+  .previewControls{display:flex;gap:8px;justify-content:center;margin-bottom:16px;z-index:1}
+  .settings select{width:100%;background:#091b22;color:var(--cyan);border:1px solid #8ae3ca55;padding:9px;font-family:var(--mono);font-size:11px}
+  .pixelNote{font-size:9px;color:#779f93;line-height:1.5}
+  #weaponRack{gap:4px}.slot{padding:3px 4px;font-size:8px}
+  @media(max-width:900px){#custRight{width:100%;padding:22px}#custView{width:86vw;height:47vh}#custBtns{bottom:-22px}.operatorCaption h2{font-size:24px}.operatorCaption{padding:0 16px 15px}}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud">
+  <div id="playerNameTag">NOMAD</div>
+  <div id="missionStrip"><span class="micro">ECLIPSE PROTOCOL / <span id="sectorIndex">01</span> · <span id="runProgress">ВОЛНА 0 / 12</span></span><strong id="sectorName">DOCK 07</strong><span id="sectorObjective">Зачистите сектор</span></div>
+  <div id="topLeft" class="panel">
+    <div id="waveLine">
+      <span id="waveLabel">ВОЛНА</span>
+      <span id="waveNum">0</span>
+    </div>
+    <div id="waveInfo">STANDBY</div>
+    <div class="statRow">
+      <div class="stat">ОЧКИ<b id="scoreVal">0</b></div>
+      <div class="stat">ЦЕЛИ<b id="killsVal">0</b></div>
+      <div class="stat">КРЕДИТЫ<b id="moneyVal">0</b></div>
+    </div>
+  </div>
+
+  <div id="mapBox" class="panel">
+    <div class="mapHeading micro"><span>РАДАР</span><span><i class="liveDot"></i>LIVE</span></div>
+    <canvas id="minimap"></canvas>
+    <div id="fpsBox"><span id="fpsVal">60</span> FPS</div>
+  </div>
+
+  <div id="buildStrip">
+    <div class="buildHead">ДОКТРИНА</div>
+    <div id="buildChips"></div>
+  </div>
+
+  <div id="bossWrap">
+    <div id="bossName">HIVE QUEEN</div>
+    <div id="bossTrack"><div id="bossFill"></div></div>
+  </div>
+
+  <div id="vitals" class="panel">
+    <div id="callsignHud"><span id="playerCallsign">NOMAD</span><span class="micro">ОПЕРАТОР / 07</span></div>
+    <div class="barRow">
+      <span class="barLabel">ЗДОРОВЬЕ</span>
+      <span class="barTrack"><span class="barFill" id="healthFill"></span></span>
+      <span class="barVal" id="healthText">100</span>
+    </div>
+    <div class="barRow">
+      <span class="barLabel">БРОНЯ</span>
+      <span class="barTrack"><span class="barFill" id="armorFill"></span></span>
+      <span class="barVal" id="armorText">0</span>
+    </div>
+    <div class="barRow" id="dashRow">
+      <span class="barLabel">РЫВОК</span>
+      <span class="barTrack"><span class="barFill" id="dashFill"></span></span>
+      <span class="barVal" style="font-size:9px;color:#6b7b8d">SPC</span>
+    </div>
+    <div class="barRow" id="grenadeRow"><span class="barLabel">ГРАНАТА</span><span class="barTrack"><span class="barFill" id="grenadeFill"></span></span><span class="barVal" id="grenadeText">G</span></div>
+  </div>
+
+  <div id="weaponBox" class="panel">
+    <div id="weaponName">M9 SIDEARM</div>
+    <div id="ammoLine">
+      <span class="mag" id="ammoMag">14</span>
+      <span id="ammoSep">/</span>
+      <span id="ammoReserve">&#8734;</span>
+    </div>
+    <div id="reloadBar"><div id="reloadFill"></div></div>
+    <div id="weaponRack"></div>
+  </div>
+
+  <div id="bannerWrap">
+    <div id="banner">WAVE 1</div>
+    <div id="bannerSub"></div>
+  </div>
+
+  <div id="popups"></div>
+  <div id="comboBox"><span id="comboCount">×1.5</span><div id="comboLabel">СЕРИЯ УБИЙСТВ</div><div id="comboTrack"><div id="comboFill"></div></div></div>
+  <div id="fieldPrompt"><strong id="prepHint"><kbd>B</kbd> СНАБЖЕНИЕ &nbsp; <kbd>N</kbd> НАЧАТЬ ВОЛНУ</strong><span><kbd>G</kbd> граната &nbsp; <kbd>ПКМ</kbd> точный огонь</span></div>
+
+  <div id="crosshair">
+    <i></i><i></i><i></i><i></i><b></b>
+    <div id="hitmark">&#10005;</div>
+  </div>
+</div>
+
+<div id="vignette"></div>
+
+<div id="loading">ECLIPSE / ИНИЦИАЛИЗАЦИЯ СЕКТОРА&hellip;</div>
+
+<div id="start" class="screen">
+  <div class="briefing">
+    <div>
+      <div class="eyebrow">TACTICAL RESPONSE UNIT / 07</div>
+      <h1 class="title">PIXEL<br><em>PROTOCOL</em></h1>
+      <div class="edition">OPERATION ECLIPSE</div>
+      <p class="intro">Станция больше не отвечает. Карантин нарушен. Пройдите через доки, криолабораторию и реактор. Зачищайте сектора, усиливайте снаряжение и не давайте рою окружить вас.</p>
+      <div class="menuActions"><button class="btn" id="deployBtn">НАЧАТЬ ОПЕРАЦИЮ ↗</button><button class="btn ghost" id="custBtn">БОЕЦ</button><button class="btn ghost" id="stationBtn">СТАНЦИЯ</button></div>
+      <div class="hint"><span id="menuCallsign">NOMAD</span> / ENTER — ВЫСАДКА &nbsp; / &nbsp; РЕКОРД <span id="menuBest">0</span> &nbsp; / &nbsp; ОБРАЗЦЫ <span id="menuSamples">0</span></div>
+    </div>
+    <aside class="briefingAside">
+      <div class="terminalHeading"><span>БРИФИНГ ОПЕРАЦИИ</span><span><i class="liveDot"></i>СВЯЗЬ УСТАНОВЛЕНА</span></div>
+      <div class="sectorRoute"><div class="routeNode"><b>01</b><span>DOCK 07</span><small>ГРУЗОВОЙ ТЕРМИНАЛ</small></div><div class="routeNode"><b>02</b><span>CRYO LAB</span><small>КРИОЛАБОРАТОРИЯ</small></div><div class="routeNode"><b>03</b><span>REACTOR CORE</span><small>ЯДРО РЕАКТОРА</small></div></div>
+      <div class="keys">
+        <div><span>Движение</span><kbd>W A S D</kbd></div><div><span>Огонь / прицел</span><kbd>ЛКМ / ПКМ</kbd></div>
+        <div><span>Рывок</span><kbd>SPACE</kbd></div><div><span>Граната</span><kbd>G</kbd></div>
+        <div><span>Перезарядка</span><kbd>R</kbd></div><div><span>Оружие</span><kbd>1–9, 0 / Q E</kbd></div>
+        <div><span>Спринт</span><kbd>SHIFT</kbd></div><div><span>Снабжение</span><kbd>B</kbd></div>
+        <div><span>Фонарь</span><kbd>F</kbd></div><div><span>Пауза</span><kbd>ESC</kbd></div>
+      </div>
+      <div class="briefFooter"><span>3 БОССА / 10 ОРУЖИЙ</span><b>БОСС: КАЖДАЯ 3-Я ВОЛНА</b></div>
+    </aside>
+  </div>
+</div>
+
+<div id="custScreen" class="screen">
+  <div id="custLeft"><canvas id="custView"></canvas><div class="operatorCaption"><div class="micro">OPERATOR DOSSIER / PIXEL PROTOCOL</div><h2 id="custCallsign">NOMAD</h2><p>ВАШ БОЕЦ. ВАШ ПОЗЫВНОЙ.</p></div><div class="previewControls"><button class="pill" id="custViewReset" type="button">СБРОСИТЬ ВИД</button></div></div>
+  <div id="custRight">
+    <div id="custTitle">БОЕЦ</div>
+    <div id="custSub">ПОЛЕВАЯ ПОДГОТОВКА</div>
+    <label class="identityField" for="custNickname"><span class="identityHeading"><span>НИК / ПОЗЫВНОЙ</span><span id="custNicknameCount">5 / 18</span></span><input id="custNickname" type="text" maxlength="36" autocomplete="off" spellcheck="false" placeholder="NOMAD" aria-describedby="nicknameHelp"><small id="nicknameHelp">До 18 символов. Кириллица, латиница, цифры, пробел, _ - .</small></label>
+    <button class="pill" id="custKeyboard" type="button">ЭКРАННАЯ КЛАВИАТУРА</button>
+    <div id="custPanel"></div>
+    <div id="custBtns">
+      <button class="btn" id="custSave">СОХРАНИТЬ</button>
+      <button class="btn ghost" id="custRandom">СЛУЧАЙНЫЙ ОБЛИК</button>
+      <button class="btn ghost" id="custReset">СБРОСИТЬ</button>
+      <div id="custHint">ПЕРЕТАСКИВАЙТЕ — ВРАЩЕНИЕ / КОЛЕСО — МАСШТАБ</div>
+    </div>
+  </div>
+</div>
+
+<div id="dmgLayer"></div>
+
+<div id="oskScreen" class="screen"><div class="card">
+  <div class="eyebrow">CALLSIGN ENTRY / ВВОД ПОЗЫВНОГО</div>
+  <div id="oskValue"></div>
+  <div id="oskKeys"></div>
+  <div class="oskActions">
+    <button id="oskLayout" type="button">LAT</button>
+    <button id="oskSpace" type="button">ПРОБЕЛ</button>
+    <button id="oskBack" type="button">УДАЛИТЬ</button>
+    <button id="oskClear" type="button">ОЧИСТИТЬ</button>
+    <button id="oskDone" type="button">ГОТОВО</button>
+  </div>
+  <div class="hint">СТИК ИЛИ СТРЕЛКИ — ВЫБОР · A ИЛИ ENTER — ВВОД · B — ЗАКРЫТЬ · ДО 18 СИМВОЛОВ</div>
+</div></div>
+
+<div id="pause" class="screen">
+  <div class="card">
+    <div class="title" style="font-size:44px">ПАУЗА</div>
+    <div class="rule"></div>
+    <div class="micro" style="margin-bottom:10px">УПРАВЛЕНИЕ</div>
+    <div id="bindPanel"></div>
+    <div class="bindHint">Нажмите «НАЗНАЧИТЬ» и затем клавишу. ESC — отмена. Цифры 1–0 выбирают оружие и карточки доктрины и не переназначаются.</div>
+    <button class="btn ghost" id="bindReset">СБРОСИТЬ УПРАВЛЕНИЕ</button>
+    <div class="settings"><label>ГРОМКОСТЬ <input id="volumeSetting" type="range" min="0" max="100" value="55" aria-label="Громкость"></label><label><input id="motionSetting" type="checkbox" checked> Тряска камеры</label><label><input id="dmgnumSetting" type="checkbox" checked> Числа урона</label><label>ПИКСЕЛЬНЫЙ СТИЛЬ<select id="pixelSetting"><option value="2" selected>ДЕТАЛЬНЫЙ · 2 PX</option><option value="3">КЛАССИКА · 3 PX</option><option value="4">КРУПНЫЙ · 4 PX</option><option value="6">РЕТРО · 6 PX</option><option value="0">ОБЫЧНАЯ 3D-ГРАФИКА</option></select></label><p class="pixelNote">Детальный режим сохраняет мелкие части оружия и брони. Ступени света, чёткие силуэты и пиксельные материалы.</p></div>
+    <div>
+      <button class="btn" id="resumeBtn">ПРОДОЛЖИТЬ</button>
+      <button class="btn ghost" id="quitBtn">В МЕНЮ</button>
+    </div>
+  </div>
+</div>
+
+<div id="upgradeScreen" class="screen"><div class="card">
+  <div class="eyebrow">FIELD REQUISITIONS / СНАБЖЕНИЕ</div>
+  <div class="upgradeHeader"><h2>СКЛАД СНАБЖЕНИЯ</h2><span class="micro"><b id="upgradeCredits">0</b> КР.</span></div>
+  <div id="upgradeGrid"></div>
+  <div id="shopArsenalRow"><span>АРСЕНАЛ <b id="shopSlots">0 / 3</b></span><div id="shopArsenal"></div></div>
+  <button class="btn ghost" id="shopReroll">ОБНОВИТЬ АССОРТИМЕНТ</button>
+  <button class="btn" id="upgradeClose">ВЕРНУТЬСЯ В СЕКТОР ↗</button>
+  <div class="hint">☆ — ЗАКРЕПИТЬ СЛОТ · СДАЙТЕ СТВОЛ, ЧТОБЫ ОСВОБОДИТЬ МЕСТО · B / ESC — ЗАКРЫТЬ · ВРЕМЯ ПРИОСТАНОВЛЕНО · ПОКУПКИ ДЕЙСТВУЮТ ДО КОНЦА ЗАБЕГА</div>
+</div></div>
+
+<div id="perkScreen" class="screen"><div class="card">
+  <div class="eyebrow">COMBAT DOCTRINE / БОЕВАЯ ДОКТРИНА</div>
+  <div class="upgradeHeader"><h2>ВЫБЕРИТЕ УСИЛЕНИЕ</h2><span class="micro">ВОЛНА <b id="perkWave">1</b></span></div>
+  <div id="perkGrid"></div>
+  <div class="perkBuild">ТЕКУЩИЙ БИЛД: <span id="perkBuild">БИЛД ПУСТ</span></div>
+  <div class="hint">1 / 2 / 3 ИЛИ ЩЕЛЧОК · ВРЕМЯ ПРИОСТАНОВЛЕНО · УСИЛЕНИЕ ДЕЙСТВУЕТ ДО КОНЦА ЗАБЕГА</div>
+</div></div>
+
+<div id="victory" class="screen"><div class="card">
+  <div class="victoryTitle">СТАНЦИЯ ОЧИЩЕНА</div>
+  <div class="sub">ОПЕРАЦИЯ ЗАВЕРШЕНА / ECLIPSE PROTOCOL</div>
+  <div class="results">
+    <div><span>ВРЕМЯ</span><b id="winTime">0:00</b></div>
+    <div><span>ЦЕЛИ</span><b id="winKills">0</b></div>
+    <div><span>ОЧКИ</span><b id="winScore">0</b></div>
+    <div><span>ТОЧНОСТЬ</span><b id="winAcc">0%</b></div>
+    <div><span>ОБРАЗЦЫ</span><b id="winSamples">+0</b></div>
+  </div>
+  <div class="victoryBuild">БИЛД ЗАБЕГА: <span id="winBuild">БИЛД ПУСТ</span></div>
+  <button class="btn" id="endlessBtn">ПРОДОЛЖИТЬ БЕЗ ПРЕДЕЛА ↗</button>
+  <button class="btn ghost" id="winStationBtn">НА СТАНЦИЮ</button>
+  <div class="hint">ENTER — ПРОДОЛЖИТЬ · ОБРАЗЦЫ УЖЕ ЗАЧИСЛЕНЫ</div>
+</div></div>
+
+<div id="stationScreen" class="screen"><div class="card">
+  <div class="eyebrow">STATION LOCKER / СНАРЯЖЕНИЕ СТАНЦИИ</div>
+  <div class="upgradeHeader"><h2>ПОСТОЯННЫЕ УЛУЧШЕНИЯ</h2><span class="micro"><b id="stationSamples">0</b> ОБРАЗЦОВ</span></div>
+  <div id="stationGrid"></div>
+  <div class="stationBank"><span>ЗАБЕГОВ: <b id="stationRuns">0</b></span><span>ВЛОЖЕНО: <b id="stationSpent">0</b></span></div>
+  <button class="btn" id="stationClose">НАЗАД ↗</button>
+  <div class="hint">ОБРАЗЦЫ НАКАПЛИВАЮТСЯ ЗА ЗАБЕГ И СОХРАНЯЮТСЯ ПОСЛЕ СМЕРТИ · УЛУЧШЕНИЯ ДЕЙСТВУЮТ СО СЛЕДУЮЩЕЙ ВЫСАДКИ</div>
+</div></div>
+
+<div id="gameover" class="screen">
+  <div class="card">
+    <div class="dead">СВЯЗЬ ПОТЕРЯНА</div>
+    <div class="sub">ОПЕРАЦИЯ ПРЕРВАНА / ECLIPSE PROTOCOL</div>
+    <div class="results">
+      <div><span>ВОЛНА</span><b id="goWave">0</b></div>
+      <div><span>ЦЕЛИ</span><b id="goKills">0</b></div>
+      <div><span>ОЧКИ</span><b id="goScore">0</b></div>
+      <div><span>ТОЧНОСТЬ</span><b id="goAcc">0%</b></div>
+      <div><span>РЕКОРД</span><b id="goBest">0</b></div>
+      <div><span>ОБРАЗЦЫ</span><b id="goSamples">+0</b></div>
+    </div>
+    <button class="btn" id="retryBtn">ПОВТОРНАЯ ВЫСАДКА</button>
+    <button class="btn ghost" id="lockerBtn">СТАНЦИЯ</button>
+    <div class="hint">ENTER — НАЧАТЬ СНОВА</div>
+  </div>
+</div>
+
+<script type="module">
+/*__GAME_BUNDLE__*/
+</script>
+</body>
+</html>

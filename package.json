@@ -1,0 +1,17 @@
+{
+  "name": "pixel-protocol",
+  "version": "2.13.0",
+  "private": true,
+  "description": "Pixel Protocol ? Three.js pixel shooter with fixed-step combat and versioned profiles.",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tools/build.js && npm run test:unit && node tools/smoketest.js 420 --click",
+    "shot": "node tools/build.js && node tools/smoketest.js 260 --shot shot.png --click",
+    "shot:menu": "node tools/build.js && node tools/smoketest.js --menu --shot menu.png",
+    "test:unit": "node tools/rigtest.js && node tools/savetest.js && node tools/simulationtest.js && node tools/perktest.js && node tools/shoptest.js && node tools/elitetest.js && node tools/controlstest.js && node tools/uinavtest.js && node tools/bosstest.js && node tools/combattest.js && node tools/navtest.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tweenjs/tween.js": "25.0.0"
+  }
+}
