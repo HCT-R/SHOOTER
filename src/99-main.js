@@ -82,6 +82,7 @@ function boot() {
     document.getElementById('modePlayersSetting').disabled = !!network?.room || game.modeId === 'campaign' || game.modeId === 'duel';
     document.getElementById('roomStatus').textContent = network?.message || '';
     document.getElementById('roomLeaveBtn').hidden = !network?.room;
+    document.getElementById('roomInviteBtn').hidden = !network?.invite;
     document.getElementById('roomCreateBtn').disabled = !!network?.room || game.modeId === 'campaign';
     document.getElementById('roomJoinBtn').disabled = !!network?.room;
     if (network?.room) {
@@ -111,6 +112,7 @@ function boot() {
   document.getElementById('roomCreateBtn').addEventListener('click', () => game.network.create(game.modeId));
   document.getElementById('roomJoinBtn').addEventListener('click', () => game.network.join(document.getElementById('roomCodeSetting').value));
   document.getElementById('roomLeaveBtn').addEventListener('click', () => game.network.leave());
+  document.getElementById('roomInviteBtn').addEventListener('click', () => game.network.copyInvite());
   document.getElementById('modePlayersSetting').addEventListener('change', refreshModeMenu);
   document.getElementById('roomReadyBtn')?.addEventListener('click', () => game.network.ready(!game.network.room?.participants.find(p => p.id === game.network.id)?.ready));
   document.getElementById('spectatorPrevBtn')?.addEventListener('click', () => { if (game.arena) game.arena.spectateStep = -1; });
@@ -136,6 +138,9 @@ function boot() {
     game.network.returnToLobby(); refreshMenuTotals(); refreshModeMenu();
   });
   refreshModeMenu();
+  // an invite link (?room=CODE) takes the friend straight into the room
+  const invited = inviteCode(location.search);
+  if (invited) { document.getElementById('roomCodeSetting').value = invited; game.network.join(invited); }
   const volume = document.getElementById('volumeSetting');
   volume.value = clamp(Number(store.get('volume', '55')), 0, 100);
   sfx.musicOn = store.get('music', '1') !== '0';

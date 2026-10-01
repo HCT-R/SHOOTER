@@ -8,3 +8,4 @@ preview-*.png
 perf-report.json
 perf-final-report.json
 perf-presentation-*.json
+ts-state/

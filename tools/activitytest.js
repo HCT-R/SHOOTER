@@ -62,7 +62,7 @@ async function main() {
       }
       throw new Error('Timed out: ' + expression);
     };
-    const tab = async () => {
+    const tab = async (address = url) => {
       const { targetId } = await call('Target.createTarget', { url: 'about:blank' });
       const { sessionId } = await call('Target.attachToTarget', { targetId, flatten: true });
       await call('Runtime.enable', {}, sessionId);
@@ -70,7 +70,7 @@ async function main() {
       await call('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
       await call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false }, sessionId);
       await call('Page.addScriptToEvaluateOnNewDocument', { source: 'window.requestAnimationFrame = function(){ return 0; };' }, sessionId);
-      await call('Page.navigate', { url }, sessionId);
+      await call('Page.navigate', { url: address }, sessionId);
       await until(sessionId, '!!window.game && document.getElementById("start").classList.contains("show")');
       await evaluate(sessionId, `window.testTicks = count => { for(let i=0;i<count;i++) game.update(1/60); }`);
       return sessionId;
@@ -184,7 +184,16 @@ async function main() {
       }
       await evaluate(host,'game.network.leave()'); await evaluate(guest,'game.network.leave()');
     }
-    console.log('PASS browser: two clients, authoritative snapshots, prediction, pause independence, FFA creator exit and reconnect');
+    // An invite link puts a fresh tab straight into the creator's duel room.
+    await evaluate(host, 'game.network.create("duel")');
+    const inviteCode = await until(host, 'game.network.room?.modeId==="duel" && game.network.room.code');
+    assert.equal(await evaluate(host, 'document.getElementById("roomInviteBtn").hidden'), false, 'Invite button in a room');
+    const invitee = await tab(await evaluate(host, 'game.network.invite'));
+    await until(invitee, 'game.network.room?.code===' + JSON.stringify(inviteCode));
+    await until(host, 'game.network.room?.participants.length===2');
+    await evaluate(invitee, 'game.network.leave()'); await evaluate(host, 'game.network.leave()');
+    assert.equal(await evaluate(host, 'document.getElementById("roomInviteBtn").hidden'), true, 'No invite button outside a room');
+    console.log('PASS browser: two clients, authoritative snapshots, prediction, pause independence, FFA creator exit and reconnect, invite link');
     await evaluate(host, 'game.startRun(4271,"royale"); testTicks(190); game.render()');
     if (visuals) await capture('battle-royale');
     assert.deepEqual(exceptions, [], 'No browser runtime exceptions');

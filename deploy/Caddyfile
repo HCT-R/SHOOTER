@@ -1,0 +1,6 @@
+# HTTPS entry point: certificate, HTTP redirect and WebSocket proxying are
+# automatic. DOMAIN comes from the server's .env, written by npm run deploy.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy game:3000
+}

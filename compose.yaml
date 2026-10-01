@@ -1,0 +1,40 @@
+# One server, two containers: the game and Caddy with automatic HTTPS.
+# npm run deploy uploads the project and runs `docker compose up -d --build`.
+name: pixel-protocol
+
+services:
+  game:
+    build:
+      context: .
+      target: game
+    # forwards SIGTERM, so `docker compose down` does not wait for a kill
+    init: true
+    restart: unless-stopped
+    environment:
+      REQUIRE_DISCORD_AUTH: ${REQUIRE_DISCORD_AUTH:-0}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      ROOM_CAPACITY: ${ROOM_CAPACITY:-32}
+      MAX_ROOMS: ${MAX_ROOMS:-100}
+
+  caddy:
+    build:
+      context: .
+      target: caddy
+    restart: unless-stopped
+    depends_on:
+      - game
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, for example DOMAIN=game.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # certificates survive redeploys
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,46 @@
+# Вариант деплоя без собственного домена.
+# Вместо Caddy публичный HTTPS даёт Tailscale: узел "shooter" получает
+# адрес вида https://shooter.<твой-tailnet>.ts.net с валидным сертификатом,
+# при этом на роутере не открывается ни один порт.
+#
+#   echo 'TS_AUTHKEY=tskey-auth-...' > .env && chmod 600 .env
+#   docker compose -f compose.ts.yaml up -d --build
+#
+name: shooter
+
+services:
+  ts-shooter:
+    image: tailscale/tailscale:latest
+    container_name: ts-shooter
+    hostname: shooter
+    restart: unless-stopped
+    environment:
+      # нужен только при первой регистрации, дальше живёт состояние в ts-state
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_STATE_DIR: /var/lib/tailscale
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./deploy/tailscale-serve.json:/config/serve.json:ro
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - sys_module
+    ports:
+      # только для локальной проверки с самого сервера
+      - "127.0.0.1:3003:3000"
+
+  game:
+    build:
+      context: .
+      target: game
+    init: true
+    restart: unless-stopped
+    # игра живёт в сетевом пространстве узла Tailscale, он её и публикует
+    network_mode: service:ts-shooter
+    environment:
+      REQUIRE_DISCORD_AUTH: ${REQUIRE_DISCORD_AUTH:-0}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      ROOM_CAPACITY: ${ROOM_CAPACITY:-32}
+      MAX_ROOMS: ${MAX_ROOMS:-100}

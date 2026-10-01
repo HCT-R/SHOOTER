@@ -1,0 +1,10 @@
+.git
+.github
+.env
+.env.*
+.pixel-deploy
+node_modules
+dist
+*.png
+perf-*.json
+ts-state

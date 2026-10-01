@@ -1,4 +1,12 @@
 /* Server-authoritative transport. No client ever uploads positions or damage. */
+/* Invite links carry the room code: https://host/?room=AB12CD34 */
+function inviteCode(search) {
+  const code = String(new URLSearchParams(search).get('room') || '').trim().toUpperCase();
+  return /^[0-9A-Z]{4,12}$/.test(code) ? code : '';
+}
+function inviteLink(code, href = location.href) {
+  const url = new URL(href); url.search = ''; url.hash = ''; url.searchParams.set('room', code); return url.href;
+}
 class RoomClient {
   constructor(game, onChange) {
     this.game = game; this.onChange = onChange; this.room = null; this.socket = null; this.id = null; this.matchId = null; this.guest = false;
@@ -10,6 +18,13 @@ class RoomClient {
     this.backgroundTimer = setInterval(() => { if (document.hidden && this.matchId) this.releaseInput(); }, 1000);
   }
   get isHost() { return !!this.room && this.room.hostId === this.id; }
+  // Discord brings its own invites; there the page URL is not shareable.
+  get invite() { return this.room && !new URLSearchParams(location.search).has('frame_id') ? inviteLink(this.room.code) : ''; }
+  async copyInvite() {
+    const link = this.invite; if (!link) return;
+    try { await navigator.clipboard.writeText(link); this.refresh('Ссылка скопирована. Отправьте её другу.'); }
+    catch (_) { window.prompt('Ссылка-приглашение в комнату', link); }
+  }
   refresh(message) { if (message) this.message = message; this.onChange?.(this); }
   send(packet) { if (this.socket?.readyState !== WebSocket.OPEN || this.socket.bufferedAmount > 128 * 1024) return false; this.socket.send(JSON.stringify(packet)); return true; }
   async session() {
@@ -18,12 +33,15 @@ class RoomClient {
       if (!window.PixelDiscordReady) throw new Error('Дождитесь авторизации Discord');
       const auth = await window.PixelDiscordReady; if (!auth?.token) throw new Error('Discord не подтвердил авторизацию'); return auth.token;
     }
-    let token; try { token = sessionStorage.getItem('pixel-room-token'); } catch (_) {}
+    const token = this.storedToken();
     if (token) return token;
-    const response = await fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: loadLook().nickname }) });
-    const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Ошибка авторизации');
+    let response; try { response = await fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: loadLook().nickname }) }); }
+    catch (_) { throw new Error('Сервер недоступен'); }
+    const data = await response.json().catch(() => ({})); if (!response.ok || !data.token) throw new Error(data.error || (response.status >= 500 ? 'Сервер недоступен' : 'Ошибка авторизации'));
     try { sessionStorage.setItem('pixel-room-token', data.token); } catch (_) {} return data.token;
   }
+  storedToken() { try { return sessionStorage.getItem('pixel-room-token'); } catch (_) { return null; } }
+  forgetToken() { try { sessionStorage.removeItem('pixel-room-token'); } catch (_) {} }
   async connect() {
     if (location.protocol === 'file:') throw new Error('Комнаты доступны через npm start → localhost:3000');
     this.intentional = false;
@@ -32,25 +50,34 @@ class RoomClient {
     this.intentional = false;
     this.connecting = (async () => {
       const token = await this.session();
-      await new Promise((resolve, reject) => {
-        const url = new URL('/rooms', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'; url.searchParams.set('token', token); url.searchParams.set('v', CombatCore.VERSION);
-        const ws = this.socket = new WebSocket(url); let settled = false;
-        const timer = setTimeout(() => { ws.close(); reject(new Error('Сервер не отвечает')); }, 8000);
-        ws.addEventListener('message', event => {
-          if (ws !== this.socket) return; let packet; try { packet = JSON.parse(event.data); } catch (_) { return; }
-          if (packet.type === 'hello') {
-            if (packet.version !== CombatCore.VERSION) { ws.close(); reject(new Error('Версия игры изменилась. Обновите страницу.')); return; }
-            this.id = packet.id; this.lastSeq = packet.lastSeq || 0; this.retries = 0; this.disconnectedAt = 0; settled = true; clearTimeout(timer); resolve();
-          } else this.receive(packet);
-        });
-        ws.addEventListener('close', event => {
-          clearTimeout(timer); if (!settled) reject(new Error('Подключение отклонено. Обновите страницу и проверьте сервер.'));
-          if (ws !== this.socket || this.intentional || event.code === 4001) return;
-          if (this.room) { this.disconnectedAt ||= Date.now(); this.refresh('Связь потеряна. Восстановление… Персонаж остаётся на арене.'); this.reconnect(); }
-        });
-        ws.addEventListener('error', () => { if (!settled) { clearTimeout(timer); reject(new Error('Сервер недоступен')); } });
-      });
+      try { await this.openSocket(token); }
+      catch (e) {
+        // sessionStorage outlives a server restart and survives a reload. Outside
+        // a room the old token protects nothing, so trade it for a fresh one once.
+        if (this.room || token !== this.storedToken()) throw e;
+        this.forgetToken(); await this.openSocket(await this.session());
+      }
     })().finally(() => { this.connecting = null; }); return this.connecting;
+  }
+  openSocket(token) {
+    return new Promise((resolve, reject) => {
+      const url = new URL('/rooms', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'; url.searchParams.set('token', token); url.searchParams.set('v', CombatCore.VERSION);
+      const ws = this.socket = new WebSocket(url); let settled = false;
+      const timer = setTimeout(() => { ws.close(); reject(new Error('Сервер не отвечает')); }, 8000);
+      ws.addEventListener('message', event => {
+        if (ws !== this.socket) return; let packet; try { packet = JSON.parse(event.data); } catch (_) { return; }
+        if (packet.type === 'hello') {
+          if (packet.version !== CombatCore.VERSION) { ws.close(); reject(new Error('Версия игры изменилась. Обновите страницу.')); return; }
+          this.id = packet.id; this.lastSeq = packet.lastSeq || 0; this.retries = 0; this.disconnectedAt = 0; settled = true; clearTimeout(timer); resolve();
+        } else this.receive(packet);
+      });
+      ws.addEventListener('close', event => {
+        clearTimeout(timer); if (!settled) reject(new Error('Подключение отклонено. Обновите страницу и проверьте сервер.'));
+        if (ws !== this.socket || this.intentional || event.code === 4001) return;
+        if (this.room) { this.disconnectedAt ||= Date.now(); this.refresh('Связь потеряна. Восстановление… Персонаж остаётся на арене.'); this.reconnect(); }
+      });
+      ws.addEventListener('error', () => { if (!settled) { clearTimeout(timer); reject(new Error('Сервер недоступен')); } });
+    });
   }
   reconnect() {
     clearTimeout(this.retryTimer);

@@ -6,7 +6,7 @@
 2. В [Discord Developer Portal](https://discord.com/developers/applications) создайте приложение и включите Activities. Для локального испытания включите Developer Mode в Discord.
 3. Скопируйте `.env.example` в `.env`. Задайте `DISCORD_CLIENT_ID` и `DISCORD_CLIENT_SECRET`. Секрет используется только сервером и не включается в HTML или сборку SDK.
 4. В OAuth2 приложения добавьте Redirect URI `https://127.0.0.1`, согласно руководству Activities. Приложение запрашивает только `identify`.
-5. Разместите сервер за HTTPS с поддержкой WebSocket Upgrade. В Activities → URL Mappings задайте префикс `/` и домен сервера без `https://`. HTML, `/discord.js`, `/api/*` и `/rooms` должны попадать в одно приложение.
+5. Разместите сервер за HTTPS с поддержкой WebSocket Upgrade; готовая схема Docker + Caddy описана в [DEPLOY.md](DEPLOY.md). В Activities → URL Mappings задайте префикс `/` и домен сервера без `https://`. HTML, `/discord.js`, `/api/*` и `/rooms` должны попадать в одно приложение.
 6. Перезапустите сервер и запустите Activity из Discord. После обмена кодом и подтверждения личности меню показывает «DISCORD ACTIVITY · ПОДКЛЮЧЕНО».
 
 Точный порядок настройки описан в [Building an Activity](https://docs.discord.com/developers/activities/building-an-activity). WebSocket поддерживается через proxy mapping; ограничения транспорта — в [Networking](https://docs.discord.com/developers/activities/development-guides/networking).

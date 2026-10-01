@@ -7,7 +7,10 @@
     "build": "node tools/build.js",
     "build:activity": "node tools/build-activity.js",
     "start": "node tools/build-activity.js && node server/index.js",
+    "deploy": "node tools/deploy.js",
+    "check:server": "node tools/duelcheck.js",
     "test:rooms": "node tools/roomtest.js",
+    "test:network": "node tools/networktest.js",
     "test:modes": "node tools/modetest.js",
     "test:audio": "node tools/audiotest.js",
     "test:core": "node tools/coretest.js && node tools/aitest.js",
@@ -19,7 +22,7 @@
     "test": "node tools/build.js && npm run test:unit && node tools/smoketest.js 420 --click",
     "shot": "node tools/build.js && node tools/smoketest.js 260 --shot shot.png --click",
     "shot:menu": "node tools/build.js && node tools/smoketest.js --menu --shot menu.png",
-    "test:unit": "node tools/rigtest.js && node tools/savetest.js && node tools/simulationtest.js && node tools/perktest.js && node tools/shoptest.js && node tools/elitetest.js && node tools/controlstest.js && node tools/uinavtest.js && node tools/bosstest.js && node tools/combattest.js && node tools/navtest.js && node tools/coretest.js && node tools/aitest.js && node tools/modetest.js && node tools/melee-presentation-test.js && node tools/campaigntest.js && node tools/roomtest.js"
+    "test:unit": "node tools/rigtest.js && node tools/savetest.js && node tools/simulationtest.js && node tools/perktest.js && node tools/shoptest.js && node tools/elitetest.js && node tools/controlstest.js && node tools/uinavtest.js && node tools/bosstest.js && node tools/combattest.js && node tools/navtest.js && node tools/coretest.js && node tools/aitest.js && node tools/modetest.js && node tools/melee-presentation-test.js && node tools/campaigntest.js && node tools/roomtest.js && node tools/networktest.js"
   },
   "license": "MIT",
   "devDependencies": {
