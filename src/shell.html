@@ -312,16 +312,18 @@
   /* Four slots as two rows of two, not three in a row and a stray fourth.
      The wider card is what makes room for the weapon portrait. */
   #upgradeGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-  .gunShot{height:100px;margin:-4px 0 10px;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(ellipse at 50% 60%,#0d2a3055,#07161a00 70%);border-radius:4px}
-  .gunShot img{height:100px;width:auto;image-rendering:pixelated;filter:drop-shadow(0 3px 7px #000a)}
-  .heldShot{height:22px;width:auto;image-rendering:pixelated;vertical-align:middle;margin-right:5px}
-  .upgrade{background:#081519;border:1px solid #b6e4d624;padding:17px;text-align:left;position:relative;display:flex;flex-direction:column}
+  .gunShot{height:140px;margin:-4px 0 14px;display:flex;align-items:center;justify-content:center;flex:none;
+    background:radial-gradient(ellipse at 50% 60%,#21404966,#07161a00 72%);border-radius:4px}
+  .gunShot img{height:140px;width:100%;object-fit:contain;filter:drop-shadow(0 4px 8px #0008)}
+  .supplyShot{background:radial-gradient(ellipse at 50% 60%,#29463855,#07161a00 72%)}
+  .heldShot{height:22px;width:auto;vertical-align:middle;margin-right:5px}
+  .upgrade{background:linear-gradient(145deg,#102025,#081519 65%);border:1px solid #b6e4d624;padding:17px;text-align:left;position:relative;display:flex;flex-direction:column;min-width:0}
   .upgrade.locked{border-color:var(--amber)}
   .upgrade.sold,.upgrade.empty{opacity:.42}
-  .upgrade .pin{position:absolute;top:9px;right:9px;background:none;border:none;color:var(--amber);
-    font-size:15px;line-height:1;cursor:pointer;padding:2px 4px;font-family:var(--mono)}
-  .upgrade .pin:hover{color:#fff}
+  .upgrade .pin{position:absolute;top:9px;right:9px;background:#0b1a20d9;border:1px solid #adcfc11f;color:var(--amber);
+    width:30px;height:30px;margin:0;z-index:1;border-radius:3px;font-size:18px;line-height:1;cursor:pointer;padding:4px;font-family:var(--mono)}
+  .upgrade .pin:hover{color:#fff;border-color:var(--amber)}
+  .upgrade .pin[aria-pressed=true]{background:#56432955;border-color:#ffb03a77}
   #shopArsenalRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;
     border-top:1px solid #accfc21c;padding-top:14px;font-size:9px;letter-spacing:.1em;color:#7e9c95}
   #shopArsenal{display:flex;gap:6px;flex-wrap:wrap}
@@ -334,9 +336,9 @@
   #shopSlots{color:var(--amber)}
   #shopReroll{margin-top:14px}
   #shopReroll[disabled]{opacity:.4}
-  .upgradeIcon{font-size:27px;color:var(--cyan);margin-bottom:15px;height:100px;display:flex;align-items:center}.upgrade h3{font-size:10px;color:#e5f6ed;letter-spacing:.06em}
-  .upgrade p{font-family:system-ui,sans-serif;font-size:11px;line-height:1.6;color:#92b0a8;margin:10px 0;min-height:36px}
-  .upgrade small{font-size:9px;color:#78958c}.upgrade button{margin-top:14px;padding:10px;width:100%;font-size:11px}
+  .upgradeIcon{font-size:32px;color:var(--cyan);margin:-4px 0 14px;height:140px;display:flex;align-items:center;justify-content:center;flex:none}.upgrade h3{font-size:11px;color:#e5f6ed;letter-spacing:.06em;min-height:14px;line-height:1.4}
+  .upgrade p{font-family:system-ui,sans-serif;font-size:11px;line-height:1.6;color:#a4bfb8;margin:10px 0 14px;min-height:36px}
+  .upgrade small{font-size:9px;color:#78958c;margin-top:auto;line-height:1.5;min-height:14px}.upgrade > .btn{margin:12px 0 0;padding:11px 8px;width:100%;min-height:38px;font-size:11px;letter-spacing:.08em;line-height:1.4}
   #perkScreen .card{width:min(880px,96vw);text-align:left}
   #perkGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
   .perk{background:#081519;border:1px solid var(--rarity);padding:17px 17px 15px;text-align:left;position:relative;
@@ -408,7 +410,7 @@
   #loading{color:var(--cyan);background:radial-gradient(ellipse,#102127,#04090d);letter-spacing:.2em}
   #custScreen{padding:0}.results{gap:6px}.results span{font-size:8px;letter-spacing:.02em}
   @media(max-width:1000px){.briefing{gap:4vw}.briefingAside{padding:18px}.title{font-size:65px}#fieldPrompt{bottom:160px}#vitals,#weaponBox{width:245px}.edition{font-size:15px;letter-spacing:.22em}}
-  @media(max-width:740px){#oskKeys button{width:34px;height:38px;font-size:13px}#start{padding:28px}.briefing{grid-template-columns:1fr;gap:24px}.title{font-size:56px}.eyebrow{margin-bottom:18px}.intro{font-size:12px}.briefingAside{padding:18px}.sectorRoute{margin-bottom:15px}.btn{margin-top:12px}.edition{margin:12px 0 18px}#topLeft{top:12px;left:12px;min-width:180px;padding:10px}#mapBox{right:12px;top:12px}#minimap{width:100px;height:100px}#missionStrip{top:160px;max-width:80vw;width:80vw}#sectorName{font-size:11px}#vitals{left:12px;bottom:12px;width:200px;padding:10px}#weaponBox{right:12px;bottom:12px;width:220px;padding:10px}#fieldPrompt{bottom:156px}#comboBox{top:230px;left:15px}#buildStrip{display:none}#bossWrap{top:205px;width:60vw}#upgradeGrid{grid-template-columns:1fr}.gunShot,.gunShot img{height:76px}#perkGrid,#stationGrid{grid-template-columns:1fr}.perk p{min-height:0}.upgradeHeader h2{font-size:17px}.card{padding:22px}.screen{padding:14px}}
+  @media(max-width:740px){#oskKeys button{width:34px;height:38px;font-size:13px}#start{padding:28px}.briefing{grid-template-columns:1fr;gap:24px}.title{font-size:56px}.eyebrow{margin-bottom:18px}.intro{font-size:12px}.briefingAside{padding:18px}.sectorRoute{margin-bottom:15px}.btn{margin-top:12px}.edition{margin:12px 0 18px}#topLeft{top:12px;left:12px;min-width:180px;padding:10px}#mapBox{right:12px;top:12px}#minimap{width:100px;height:100px}#missionStrip{top:160px;max-width:80vw;width:80vw}#sectorName{font-size:11px}#vitals{left:12px;bottom:12px;width:200px;padding:10px}#weaponBox{right:12px;bottom:12px;width:220px;padding:10px}#fieldPrompt{bottom:156px}#comboBox{top:230px;left:15px}#buildStrip{display:none}#bossWrap{top:205px;width:60vw}#upgradeGrid{grid-template-columns:1fr}.gunShot,.gunShot img,.upgradeIcon{height:110px}#perkGrid,#stationGrid{grid-template-columns:1fr}.perk p{min-height:0}.upgradeHeader h2{font-size:17px}.card{padding:22px}.screen{padding:14px}}
   @media(max-height:740px) and (min-width:741px){#start{padding-top:24px;padding-bottom:24px}.briefingAside{padding:20px}.eyebrow{margin-bottom:20px}.title{font-size:72px}.sectorRoute{margin-bottom:14px}.keys div{padding:5px 0}}
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
   /* Pixel Protocol operator station */
@@ -433,9 +435,161 @@
   #custRight .swatch{border-radius:3px;width:25px;height:25px}.pill{border-radius:1px}
   .previewControls{display:flex;gap:8px;justify-content:center;margin-bottom:16px;z-index:1}
   .settings select{width:100%;background:#091b22;color:var(--cyan);border:1px solid #8ae3ca55;padding:9px;font-family:var(--mono);font-size:11px}
-  .pixelNote{font-size:9px;color:#779f93;line-height:1.5}
+  .qualityNote{font-size:9px;color:#779f93;line-height:1.5}
   #weaponRack{gap:4px}.slot{padding:3px 4px;font-size:8px}
   @media(max-width:900px){#custRight{width:100%;padding:22px}#custView{width:86vw;height:47vh}#custBtns{bottom:-22px}.operatorCaption h2{font-size:24px}.operatorCaption{padding:0 16px 15px}}
+  /* Operation selector: one visual language for mission, arena and party. */
+  :root{--soft:#9fbdb8;--line:#91d0c229}
+  select:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+  [hidden]{display:none!important}
+  .screen>.card{margin:auto}
+  #start{padding:34px 5vw;background:radial-gradient(ellipse at 88% 12%,#22626624,transparent 50%),linear-gradient(105deg,#030a12f5,#06121be8 65%,#0a1e23da)}
+  #start::before{content:'';position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(#83d9c704 1px,transparent 1px),linear-gradient(90deg,#83d9c704 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(90deg,transparent,#000)}
+  .briefing{position:relative;max-width:1270px;grid-template-columns:minmax(310px,.87fr) minmax(440px,1.13fr);gap:5vw}
+  .briefingHero{padding:14px 0}
+  .briefingHero .eyebrow{font-size:9px;letter-spacing:.18em;margin-bottom:24px;color:#a0c4bc}
+  .briefingHero .title{font-size:clamp(54px,6.2vw,94px);line-height:.91;letter-spacing:-.015em}
+  .briefingHero .edition{font-size:12px;letter-spacing:.29em;margin:19px 0 23px;color:var(--amber)}
+  .briefingHero .intro{font-size:14px;line-height:1.75;max-width:410px}
+  .operatorStatus{margin:29px 0 18px;display:flex;gap:10px;align-items:center;color:#b6d5cb;font-size:10px;letter-spacing:.1em}
+  .operatorBadge{display:flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;border:1px solid #7cf4df50;background:#7cf4df08;color:var(--cyan);font-size:16px}
+  .operatorStatus small{display:block;margin-top:5px;font-size:8px;color:#70988e;letter-spacing:.13em}
+  .menuActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0;max-width:410px}
+  .menuActions .btn{margin:0;padding:16px 18px;font-size:11px;letter-spacing:.08em}
+  .menuActions #deployBtn{grid-column:1/-1;padding:18px 24px;font-size:13px;display:flex;align-items:center;justify-content:space-between}
+  .menuActions #deployBtn::after{content:'↗';font-size:20px;line-height:14px}
+  .menuMeta{display:flex;flex-wrap:wrap;gap:18px;font-size:9px;letter-spacing:.08em;color:#70988e;margin-top:20px}
+  .menuMeta b{color:#bbd5ca;font-weight:400;margin-left:4px}
+  .controlGuide{max-width:410px;margin-top:24px;border-top:1px solid var(--line);padding-top:14px}
+  .controlGuide summary{cursor:pointer;font-size:9px;color:#92b7ac;letter-spacing:.08em;list-style-position:inside}
+  .controlGuide .keys{margin-top:9px}
+  .briefingAside{padding:22px;background:linear-gradient(140deg,#12272cbb,#07141cdd);border-color:#a0d7c929;box-shadow:0 24px 90px #0004}
+  .terminalHeading{padding-bottom:14px;margin-bottom:16px;font-size:10px}
+  .terminalHeading span:last-child{font-size:8px;letter-spacing:.04em}
+  .modeGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .modeCard{--mode-color:#7cf4df;position:relative;display:grid;grid-template-columns:40px 1fr;grid-template-rows:1fr auto;column-gap:10px;row-gap:10px;align-items:center;min-height:106px;padding:15px 13px;text-align:left;color:#c6dbd5;background:#06141caa;border:1px solid #89b6b328;border-radius:2px;cursor:pointer;transition:border-color .18s,background .18s,transform .18s;overflow:hidden}
+  .modeCard::after{content:'';position:absolute;right:0;top:0;width:22px;height:22px;background:linear-gradient(225deg,var(--mode-color) 0 49%,transparent 51%);opacity:0;transition:opacity .18s}
+  .modeCard[data-mode=duel]{--mode-color:#ffc271}.modeCard[data-mode=ffa]{--mode-color:#c6a1ff}.modeCard[data-mode=royale]{--mode-color:#ff8683}
+  .modeCard:hover{border-color:var(--mode-color);background:#15303688;transform:translateY(-1px)}
+  .modeCard.selected{border-color:var(--mode-color);background:linear-gradient(120deg,#7cf4df13,#08171b);box-shadow:inset 0 -2px var(--mode-color)}
+  .modeCard.selected::after{opacity:.7}.modeCard.selected .modeIcon{color:var(--mode-color)}
+  .modeCard.selected:disabled{opacity:.85}
+  .modeIcon{width:38px;height:38px;color:#739f9b;display:block;grid-row:1}
+  .modeIcon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:miter;shape-rendering:geometricPrecision}
+  .modeCardTitle{font-size:12px;font-weight:700;line-height:1.25;letter-spacing:.025em;color:#e4f1e9}
+  .modeCardTitle small{display:block;font-size:8px;font-weight:400;letter-spacing:.08em;color:#7eaaa0;margin-top:5px}
+  .modeCardMeta{grid-column:1/-1;font-size:9px;color:#9bb4ac;letter-spacing:.02em}
+  .modeBrief{margin:16px 0 0;padding:14px 0 12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);min-height:94px}
+  .modeBriefHeading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}
+  #modeTitle{font-size:10px;letter-spacing:.08em;color:var(--cyan)}
+  #modeStatus{font-size:8px;color:#9cb9af;border:1px solid #8fb9ac29;padding:3px 6px;white-space:nowrap}
+  #modeDescription{font-family:system-ui,sans-serif;font-size:12px;line-height:1.55;color:#a9c2b9;min-height:36px}
+  #modeRules{font-size:9px;color:var(--amber);line-height:1.5;margin-top:8px}
+  .modeOptions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;font-size:9px;color:#92afa5}
+  .modeOptions label{display:flex;align-items:center;gap:9px}
+  #modePlayersSetting{border:1px solid #8ac5b73d;padding:6px 9px;color:#d0ece0;background:#091b22;font-size:10px;max-width:120px}
+  #modePlayersSetting:disabled{opacity:.45}#modeSession{font-size:8px;color:#82a69b;text-align:right}
+  .roomLobby{border-top:1px solid var(--line);padding-top:12px}
+  .roomHeading{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:9px;letter-spacing:.06em;color:#b4cfc3;margin-bottom:10px}
+  #roomStatus{color:#7da99b;font-size:8px;letter-spacing:0;text-align:right}
+  .roomActions{display:grid;grid-template-columns:minmax(110px,1fr) auto auto;gap:6px}
+  #roomCodeSetting{width:100%;min-width:0;background:#05131b;color:#e0f5ea;border:1px solid #91d0c23d;border-radius:2px;padding:10px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+  #roomCodeSetting::placeholder{color:#668d84;letter-spacing:.04em}
+  .roomActions button{padding:10px;font-family:var(--mono);font-size:9px;white-space:nowrap;background:#9acbbb0c;border:1px solid #91d0c244;border-radius:2px;color:#bfe4d5;cursor:pointer}
+  .roomActions button:hover{border-color:var(--cyan);color:#effff8}#roomLeaveBtn{grid-column:2/-1;color:#ffb6a8}
+  .lobbyNote{font-size:8px;color:#71988c;line-height:1.6;margin-top:8px}
+  #pause .card{width:min(760px,94vw);max-height:calc(100dvh - 32px);overflow-y:auto;text-align:left}
+  #pause .title{font-size:27px!important}.settings{gap:16px 24px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:20px 0}
+  .settings label{font-size:10px;letter-spacing:.02em}.settings .checkSetting{align-content:center}.settings .qualityNote{grid-column:1/-1}
+  .settingValue{margin-left:auto;font-size:9px;color:var(--cyan);font-variant-numeric:tabular-nums}
+  #bindPanel{max-height:24vh;margin-top:12px}.settings input[type=range]{height:16px;cursor:pointer}#bindReset{margin:10px 0 0;padding:10px 14px}
+  .hudModeLine{display:flex;justify-content:space-between;gap:12px;font-size:8px;letter-spacing:.1em;color:var(--cyan);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  #matchClock{font-variant-numeric:tabular-nums;color:#d3e9de;letter-spacing:.03em}
+  #waveInfo{max-width:230px;line-height:1.5}#ammoState{min-height:13px;font-size:9px;color:#95b6a9;margin-top:7px;letter-spacing:.03em}
+  #ammoState.warn{color:var(--amber)}#ammoState.danger{color:#ff877b}
+  #combatStatus{font-size:8px;color:#a0c8b6;min-height:10px;margin-top:10px;letter-spacing:.08em}
+  #vitals.critical{border-color:#ff7d6680;border-top-color:#ff8269;background:#251118e8}#vitals.critical #combatStatus{color:#ff9d86}
+  #matchPanel{position:absolute;right:28px;top:250px;width:206px;padding:12px 13px}
+  .matchPanelHead{display:flex;justify-content:space-between;color:#9cb9ac;font-size:8px;letter-spacing:.1em;margin-bottom:9px}
+  #matchScore{font-size:12px;color:var(--amber);font-weight:bold;letter-spacing:0}
+  #matchObjective{font-size:9px;line-height:1.6;color:#c2dacf;padding-bottom:9px;margin-bottom:5px;border-bottom:1px solid var(--line)}
+  .rosterRow{display:grid;grid-template-columns:15px 1fr auto;gap:5px;font-size:9px;padding:5px 0;color:#91b1a5}
+  .rosterRow.isPlayer{color:var(--cyan)}.rosterRow.out{opacity:.43}.rosterRow span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rosterRow b{font-weight:400;font-variant-numeric:tabular-nums}
+  #zoneWarning{position:absolute;top:144px;left:50%;transform:translateX(-50%);padding:8px 14px;max-width:45vw;background:#351c1cf0;border:1px solid #ff917d8a;color:#ffba9d;font-size:10px;text-align:center;line-height:1.4}
+  body.arena-mode #buildStrip{display:none}body.arena-mode #comboBox{display:none}body.arena-mode #fieldPrompt strong{display:none}body.arena-mode #grenadeRow,body.arena-mode #grenadeHint{display:none}
+  #buildStrip{top:240px;right:28px}#comboBox{top:220px}#mapBox{width:176px}#matchPanel{width:206px}#sectorObjective{display:block;line-height:1.65;text-shadow:0 2px 6px #000}
+  #arenaResults .card{width:min(650px,94vw);text-align:left;padding:34px}
+  #arenaResultTitle{font-size:clamp(25px,4vw,40px);color:var(--cyan);line-height:1.1;letter-spacing:-.03em;margin:14px 0}
+  #arenaResultSubtitle{font-size:12px;line-height:1.6;color:#a7c4b7}
+  #arenaResultStats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:24px 0;font-size:12px;line-height:1.7;color:#d6ecdf}
+  #arenaResultStats>div{padding:12px;background:#79f6dc05;border:1px solid var(--line)}
+  #arenaResultStats b{display:block;color:var(--amber);font-size:22px}.resultActions{display:flex;gap:10px;flex-wrap:wrap}.resultActions .btn{margin:0}
+  @media(max-width:1100px){.briefing{gap:3vw;grid-template-columns:minmax(270px,.8fr) minmax(390px,1.2fr)}.briefingAside{padding:17px}.briefingHero .title{font-size:68px}.modeCard{padding:12px;min-height:98px}.modeCardTitle{font-size:11px}}
+  @media(max-width:850px){#start{padding:24px}.briefing{grid-template-columns:1fr;gap:24px;width:min(600px,100%)}.briefingHero{padding:0}.briefingHero .title{font-size:55px}.briefingHero .title br{display:none}.briefingHero .title em::before{content:' '}.briefingHero .intro{max-width:100%;font-size:12px}.briefingHero .edition{margin:12px 0}.briefingHero .eyebrow{margin-bottom:14px}.operatorStatus{margin:15px 0}.menuActions{max-width:none;grid-template-columns:1.4fr .7fr .7fr;gap:7px}.menuActions #deployBtn{grid-column:auto;font-size:10px;padding:13px}.menuActions .btn.ghost{padding:13px 8px;font-size:9px}.menuMeta{margin-top:13px}.controlGuide{max-width:none;margin-top:15px}.modeCard{min-height:98px}.briefingAside{padding:17px}#matchPanel{top:192px;right:12px;width:168px;padding:10px}#zoneWarning{top:214px;max-width:70vw}#mapBox{width:auto}#comboBox{top:265px}}
+  @media(max-width:560px){#start{padding:18px}.briefingHero .title{font-size:43px}.briefingHero .title br{display:block}.modeCard{grid-template-columns:30px 1fr;padding:12px 9px;column-gap:7px}.modeIcon{width:29px;height:29px}.modeCardTitle{font-size:10px}.modeCardTitle small{font-size:7px}.modeCardMeta{font-size:8px}.modeGrid{gap:7px}.terminalHeading{font-size:9px}.terminalHeading span:last-child{font-size:7px}.roomActions{grid-template-columns:minmax(80px,1fr) auto auto}.roomActions button{padding:10px 7px;font-size:8px}.modeBriefHeading{flex-wrap:wrap}.modeOptions{gap:5px}.settings{grid-template-columns:1fr}.settings .qualityNote{grid-column:auto}.card{padding:18px}.results{grid-template-columns:repeat(3,1fr)}#vitals{width:176px;padding:9px}#weaponBox{width:172px;padding:9px}#playerCallsign{max-width:98px;font-size:10px}.barLabel{width:47px;font-size:8px}.barVal{width:26px;font-size:11px}#callsignHud .micro{font-size:7px}#weaponName{font-size:10px}.slot{font-size:7px;padding:2px}#missionStrip{top:180px}#matchPanel{top:255px;width:150px}#zoneWarning{top:235px;max-width:85vw}#fieldPrompt{font-size:8px;bottom:174px}#combatStatus{font-size:7px}#arenaResults .card{padding:23px}}
+  @media(max-height:760px) and (min-width:851px){#start{padding-top:22px;padding-bottom:22px}.briefingAside{padding:16px}.modeCard{min-height:93px;padding:11px 13px}.modeBrief{min-height:0;margin-top:12px;padding:10px 0}.modeOptions{margin:10px 0}.terminalHeading{margin-bottom:12px}.roomLobby{padding-top:10px}.operatorStatus{margin-top:21px}.controlGuide{margin-top:18px}}
+  @media(max-height:660px) and (min-width:741px){#mapBox{width:134px;padding:9px}#minimap{width:114px;height:114px}#matchPanel{top:207px;width:182px;padding:10px}.rosterRow{padding:4px 0}#matchObjective{font-size:8px}#missionStrip{max-width:40vw}}
+  /* Tactical readability: the action owns the centre of the screen. */
+  .panel{background:linear-gradient(140deg,#081921ec,#071219e8);border:1px solid #8daea92c;border-top:1px solid #95d8c863;box-shadow:0 6px 16px #0004,inset 0 1px #defdef05}
+  .screen{scrollbar-width:thin;scrollbar-color:#416e60 #07141b}.screen::-webkit-scrollbar{width:6px}.screen::-webkit-scrollbar-track{background:#07141b}.screen::-webkit-scrollbar-thumb{background:#416e60}
+  .barFill{transition:none}
+  #bannerWrap{transition:opacity .18s}
+  #topLeft{top:20px;left:20px;min-width:196px;padding:12px 13px}
+  .hudModeLine{font-size:8px;padding-bottom:7px;margin-bottom:8px;color:#abd2c6}#waveLine{gap:9px}#waveNum{font-size:25px}#waveLabel{font-size:8px;color:#87a99d;letter-spacing:.1em}
+  #waveInfo{font-size:9px;max-width:190px;color:#a3bdb2;margin-top:5px;letter-spacing:.025em}
+  .statRow{gap:20px;padding-top:7px;margin-top:8px}.stat{font-size:8px}.stat b{font-size:12px;color:#cce7d8}
+  body.arena-mode #topLeft .statRow{display:none}body.arena-mode #waveInfo{color:#9eb3ab;font-size:8px}
+  #missionStrip{top:23px;max-width:40vw;width:max-content;padding:0 13px;text-shadow:0 2px 7px #000}
+  #missionStrip>.micro{color:#83a59c;font-size:8px;letter-spacing:.12em}#sectorName{font-size:12px;letter-spacing:.13em;margin:7px 0 5px;color:#d6eee0}
+  #sectorObjective{font-size:9px;color:#a7c3b7;line-height:1.5;max-width:370px}
+  #mapBox{top:20px;right:20px;width:154px;padding:8px}#minimap{width:136px;height:136px;background:#07131b}
+  .mapHeading{font-size:8px;margin-bottom:7px}.liveDot{width:4px;height:4px;box-shadow:0 0 5px #7cf4df77}
+  .mapLegend{display:flex;justify-content:space-between;gap:5px;padding-top:7px;font-size:7px;letter-spacing:.02em;color:#95afa4}.mapLegend b{font-size:9px;margin-right:3px;font-weight:400}.mapLegend .friendly{color:#7cf4df}.mapLegend .hostile{color:#ff837b}.mapLegend .hazard{color:#ffc271}
+  #fpsBox{font-size:7px;margin-top:6px;color:#587d70}
+  #matchPanel{right:20px;top:233px;width:188px;padding:11px 12px}.matchPanelHead{font-size:7px;color:#86a89b;margin-bottom:8px}#matchScore{font-size:10px;color:#cce6d8}
+  #matchObjective{font-size:8px;line-height:1.5;color:#83a498;padding-bottom:7px;margin-bottom:5px}.rosterRow{font-size:8px;padding:5px 0;gap:5px;color:#adbbb2}.rosterRow.isPlayer{border-left:2px solid #7cf4df;padding-left:5px;margin-left:-7px;background:#7cf4df07}
+  #vitals{left:20px;bottom:20px;width:250px;padding:12px 13px}#callsignHud{margin-bottom:10px;padding-bottom:8px}#playerCallsign{font-size:10px;letter-spacing:.1em}#callsignHud .micro{font-size:7px;letter-spacing:.06em}
+  .barRow{gap:8px;margin-bottom:7px}.barLabel{font-size:8px;letter-spacing:.04em;width:48px}.barTrack{height:11px;border-radius:0;border-color:#829e9540;background:#0006}.barTrack::after{background:repeating-linear-gradient(90deg,transparent 0 16px,#00181b55 16px 17px)}.barVal{font-size:12px;width:30px;color:#d5e5dc}#dashRow .barTrack,#grenadeRow .barTrack{height:3px;border:0}
+  #healthFill{background:#7cf4df}#armorFill{background:linear-gradient(90deg,#42859e,#85c4e3)}#combatStatus{font-size:7px;min-height:9px;margin-top:9px;color:#7a9e90}
+  #vitals.critical{background:linear-gradient(140deg,#271c12ef,#151713ed);border-color:#ffc27158;border-top-color:#ffc271}#vitals.critical #combatStatus{color:#ffd095}
+  #weaponBox{right:20px;bottom:20px;width:222px;padding:12px 13px}#weaponName{font-size:10px;letter-spacing:.08em;color:#d5e5dc;margin-bottom:6px}.mag{font-size:32px;letter-spacing:-.055em}#ammoReserve{font-size:14px;color:#8aa99b}#ammoSep{font-size:15px;color:#4d7165}#ammoState{font-size:8px;margin-top:6px;min-height:11px;color:#7d9f90}#weaponRack{margin-top:8px;gap:3px}.slot{font-size:7px;padding:3px}.slot .num{font-size:7px}
+  #playerNameTag{font-size:8px;padding:2px 6px;border:0;border-bottom:1px solid #7cf4df80;background:#071a1ba8;letter-spacing:.06em;color:#aff0d8}
+  #fieldPrompt{bottom:25px;font-size:8px;line-height:1.8;color:#8ca697}#fieldPrompt kbd{padding:2px 4px;color:#c4d9ca;border-color:#6c8b7944}#fieldPrompt strong{font-size:9px}
+  #buildStrip{top:235px;right:20px}#comboBox{left:22px;top:190px;width:125px}#comboCount{font-size:22px}
+  #crosshair{--spread:6px}#crosshair i{box-shadow:0 0 1px 1px #04151bdd;background:currentColor;opacity:.9}#crosshair b{width:3px;height:3px;margin:-1.5px 0 0 -1.5px;background:currentColor;border-radius:0;box-shadow:0 0 0 1px #06141ccc}#crosshair.targeted b{width:4px;height:4px;margin:-2px 0 0 -2px}#crosshair.reloading i{opacity:.5}
+  #hitmark{font-family:var(--mono);font-size:17px;text-shadow:0 0 2px #000}
+  #bannerWrap.compact{top:101px;left:50%;right:auto;max-width:40vw;width:max-content;padding:8px 13px;text-align:left;background:#081a20ed;border:1px solid #94c4b73d;border-left:2px solid #ffc271;transform:translate(-50%,-6px);box-shadow:0 4px 16px #0003}
+  #bannerWrap.compact.show{transform:translate(-50%,0)}#bannerWrap.compact #banner{font-size:12px;color:#ffd095;letter-spacing:.05em;text-shadow:none;line-height:1.3}#bannerWrap.compact #bannerSub{font-size:8px;color:#aec5b8;line-height:1.5;margin-top:3px;letter-spacing:.01em;text-shadow:none}
+  #countdownCue{position:absolute;left:50%;top:104px;transform:translateX(-50%);display:flex;align-items:center;gap:13px;background:#091d22e8;border:1px solid #7cf4df4d;border-left:2px solid #7cf4df;padding:8px 13px;box-shadow:0 5px 20px #0003}#countdownLabel{font-size:8px;letter-spacing:.11em;color:#b8d7c5}#countdownNumber{font-size:24px;line-height:1;color:#7cf4df;font-variant-numeric:tabular-nums}
+  #zoneWarning{top:auto;bottom:164px;left:50%;max-width:45vw;width:max-content;padding:7px 10px;background:#2a2114e8;border:1px solid #ffc27145;border-left:2px solid #ffc271;color:#ffd295;font-size:9px;letter-spacing:.025em;box-shadow:0 4px 15px #0004}
+  .directionCue{position:absolute;width:20px;height:15px;clip-path:polygon(50% 0,100% 85%,50% 58%,0 85%);filter:drop-shadow(0 2px 3px #000);pointer-events:none;transform-origin:center}#damageDirection{background:#ff837b;width:28px;height:15px}#zoneDirection{background:#ffc271}
+  .modeCard{grid-template-columns:minmax(0,1fr) 82px;grid-template-rows:1fr auto;column-gap:8px;row-gap:7px;min-height:109px;padding:13px}
+  .modeCard .modeIcon{grid-column:2;grid-row:1/-1;width:82px;height:67px;color:#496965;align-self:center}.modeCardTitle{grid-column:1;grid-row:1;font-size:11px;line-height:1.3}.modeCardTitle small{font-size:7px;letter-spacing:.06em}.modeCardMeta{grid-column:1;grid-row:2;line-height:1.45;font-size:8px;color:#87ab9e}
+  .modeIcon svg{stroke-width:1;shape-rendering:geometricPrecision}.modeIcon .planFloor{fill:#42695c14;stroke:#7ba99950}.modeIcon .planBlock{fill:#49695c32;stroke:#7ba9999c}.modeIcon .planLane{stroke:#75a69366;stroke-dasharray:2 3}.modeIcon .planFriend{fill:#7cf4df;stroke:#7cf4df}.modeIcon .planEnemy{fill:#ff837b;stroke:#ff837b}.modeIcon .planZone{stroke:#ffc271;stroke-width:1.6}.modeIcon .planPath{stroke:#7cf4df;stroke-width:1.3;stroke-dasharray:3 2}
+  .modeCard.selected .planFloor{fill:#7cf4df08;stroke:#82c9b88a}.modeCard.selected .planBlock{fill:#84b39d22;stroke:#91c9b0}
+  @media(max-width:1100px){#fieldPrompt{bottom:154px}.modeCard{padding:11px;grid-template-columns:minmax(0,1fr) 72px;min-height:108px}.modeCard .modeIcon{width:72px;height:62px}.modeCardTitle{font-size:10px}.modeCardTitle small{font-size:6.5px}.modeCardMeta{font-size:7px}}
+  @media(max-width:850px){#matchPanel{width:168px}.modeCard{min-height:109px}.modeCard .modeIcon{width:82px;height:64px}.modeCard{grid-template-columns:minmax(0,1fr) 82px}.modeCardTitle{font-size:11px}.modeCardMeta{font-size:8px}}
+  @media(max-width:740px){#topLeft{left:12px;top:12px;min-width:168px;padding:10px}#mapBox{right:12px;top:12px;width:118px;padding:7px}#minimap{width:102px;height:102px}.mapLegend{font-size:6px;gap:2px}.mapLegend b{font-size:7px;margin-right:2px}#fpsBox{display:none}#matchPanel{right:12px;top:174px;width:160px;padding:9px}#missionStrip{top:20px;max-width:calc(100vw - 370px);width:calc(100vw - 370px)}#missionStrip>.micro{font-size:7px}#sectorName{font-size:10px;margin:6px 0 4px}#sectorObjective{font-size:8px}#bannerWrap.compact{top:108px;max-width:42vw;padding:6px 9px}#bannerWrap.compact #banner{font-size:10px}#bannerWrap.compact #bannerSub{font-size:7px}#countdownCue{top:109px;padding:6px 10px;gap:9px}#countdownLabel{font-size:7px}#countdownNumber{font-size:20px}#vitals{left:12px;bottom:12px;width:204px;padding:10px}#weaponBox{right:12px;bottom:12px;width:184px;padding:10px}#fieldPrompt{bottom:157px}#zoneWarning{bottom:184px;max-width:62vw;font-size:8px;padding:6px 8px}#comboBox{top:242px;left:13px}#bossWrap{top:225px}#combatStatus{font-size:6.5px}.briefingHero .title{font-size:clamp(32px,6.4vw,44px)}.briefingHero .title br{display:none}.briefingHero .intro{display:none}.briefingHero .eyebrow{font-size:8px;margin-bottom:10px}.briefingHero .edition{font-size:9px;margin:10px 0}.operatorStatus{margin:12px 0;font-size:9px}.operatorStatus small,.operatorBadge{display:none}.controlGuide{margin-top:12px;padding-top:10px}}
+  @media(max-width:560px){.modeCard{grid-template-columns:minmax(0,1fr) 60px;min-height:104px;padding:10px 9px}.modeCard .modeIcon{width:60px;height:62px}.modeCardTitle{font-size:9px}.modeCardTitle small{font-size:6px}.modeCardMeta{font-size:7px}#vitals{width:177px;padding:9px}#weaponBox{width:163px;padding:9px}#matchPanel{width:137px}#matchObjective{display:none}.rosterRow{font-size:7px}#matchScore{font-size:8px}.matchPanelHead{font-size:6px}#missionStrip{max-width:58vw;width:58vw;left:12px;transform:none;text-align:left;top:160px;padding:0}#bannerWrap.compact{top:245px;left:12px;transform:translateY(-6px);max-width:54vw}#bannerWrap.compact.show{transform:translateY(0)}#countdownCue{top:245px;left:12px;transform:none}#fieldPrompt{font-size:7px}#zoneWarning{max-width:82vw}.barVal{font-size:11px}.barLabel{width:43px;font-size:7px}#weaponName{font-size:9px}#ammoState{font-size:7px}.mag{font-size:29px}}
+  @media(max-height:660px) and (min-width:741px){#mapBox{width:128px;padding:7px}#minimap{width:112px;height:112px}#matchPanel{top:207px;width:174px;padding:9px}#matchObjective{font-size:7px}.rosterRow{padding:4px 0}#vitals{width:230px}#weaponBox{width:204px}#fieldPrompt{bottom:152px}.modeCard{min-height:103px}}
+
+  /* Smooth 3D interface: competitive information stays in its own corner;
+     campaign navigation has a separate, persistent objective panel. */
+  body{--mono:"Segoe UI",Arial,sans-serif}.title{letter-spacing:-.065em}.panel{border-radius:8px}.btn,.modeCard,.modeBrief,.roomLobby,.missionCard{border-radius:7px}.btn{letter-spacing:.07em}.modeCardTitle{font-weight:700}.modeCardTitle small,.micro,.eyebrow{letter-spacing:.1em}
+  #mapBox[hidden],#matchPanel[hidden],#missionPanel[hidden],#spectatorBar[hidden],#interactionHint[hidden],#healHint[hidden]{display:none!important}
+  body.arena-mode #matchPanel{top:22px;right:22px;width:210px}body.arena-mode #buildStrip{display:none}body.arena-mode #missionStrip{max-width:calc(100vw - 540px)}
+  #missionPanel{position:absolute;left:24px;top:194px;width:246px;padding:13px 15px;background:#0a1920dc}#missionTask{display:block;font-size:11px;line-height:1.45;margin:7px 0}#missionCounter{font-size:10px;color:#ffc271}.missionTrack{height:3px;background:#23383d;border-radius:2px;margin-top:9px;overflow:hidden}.missionTrack i{display:block;height:100%;width:0;background:#7cf4df}#missionRadio{font-size:10px;line-height:1.6;color:#aec9c5;margin:12px 0 0;border-top:1px solid #ffffff12;padding-top:10px}#missionRadio[hidden]{display:none}
+  #interactionHint{color:#ffd095;margin-right:13px}#healHint{color:#7cf4df;margin-right:13px}#fieldPrompt{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;max-width:88vw;width:max-content;text-align:center}
+  #zoneReadout{font-size:9px;line-height:1.6;color:#ffd095;padding:7px 0 8px;border-bottom:1px solid #ffc27125;margin-bottom:4px}#zoneReadout[hidden]{display:none}
+  #escortNameTag{position:absolute;transform:translate(-50%,-100%);border:1px solid #7cf4df70;background:#102b2ade;color:#a9ffdf;border-radius:3px;padding:4px 6px;font-size:8px;font-weight:600;white-space:nowrap}#escortNameTag[hidden]{display:none}
+  #respawnLoadoutPanel{pointer-events:auto;position:absolute;bottom:182px;left:50%;transform:translateX(-50%);width:min(300px,65vw);padding:12px 15px;border:1px solid #7cf4df44;border-radius:8px;background:#091d22ee;color:#c7e2d7;font-size:10px}#respawnLoadoutPanel[hidden]{display:none}#respawnLoadoutPanel label{display:block}#respawnLoadoutSetting{display:block;width:100%;margin-top:8px;padding:10px;background:#152b32;border:1px solid #769c9144;border-radius:4px;color:#e3f0e7;font-size:11px}
+  #spectatorBar{pointer-events:auto;position:absolute;bottom:174px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:15px;border:1px solid #7cf4df44;border-radius:8px;background:#091d22eb;padding:9px 12px;text-align:center;font-size:8px;color:#9cbbb5}#spectatorBar strong{display:block;color:#e2f3eb;margin-top:4px;font-size:12px}#spectatorBar button{background:#7cf4df14;border:1px solid #7cf4df44;color:#7cf4df;border-radius:5px;padding:8px 12px;cursor:pointer}
+  .arenaSetup{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}.arenaSetup label{font-size:8px;color:#8bab9f;line-height:1.6}.arenaSetup select{display:block;width:100%;background:#10242b;color:#d4ece3;border:1px solid #789f9744;border-radius:5px;padding:9px;margin-top:4px;font:inherit;font-size:10px}.arenaSetup select:disabled{opacity:.4}#roomReadyBtn{padding:10px 14px;font-size:10px;width:100%;margin-top:10px}#roomRoster{display:grid;gap:5px;font-size:10px;line-height:1.5;color:#b3cfc4;margin-top:9px}
+  .missionSelectCard{width:min(950px,95vw)!important;text-align:left!important;padding:28px!important}.missionSelectCard h2,.campaignResultCard h2{font-size:25px;letter-spacing:-.025em;line-height:1.2}.missionIntro{font-size:12px;line-height:1.6;color:#a4c2b9;max-width:630px}#missionGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0}.missionCard{position:relative;border:1px solid #7ba99945;background:linear-gradient(145deg,#133331,#0c1b24);padding:19px;text-align:left;color:#dceee3;cursor:pointer;min-height:204px}.missionCard:hover:not(:disabled){border-color:#7cf4df;background:#173c3b}.missionCard:disabled{opacity:.4;cursor:default}.missionNumber{font-size:26px;color:#7cf4df;display:block;font-weight:300;margin-bottom:12px}.missionCard strong{display:block;font-size:12px;line-height:1.3}.missionCard small{display:block;font-size:9px;color:#93b3aa;margin-top:6px}.missionCard p{font-size:10px;line-height:1.6;color:#b2cbc4;min-height:47px}.missionCard em{font-style:normal;font-size:8px;color:#ffc271;display:block;margin-top:16px}.campaignResultCard{width:min(670px,94vw)!important;text-align:left!important;padding:32px!important}.campaignResultCard p{line-height:1.8;color:#b3cfc4;font-size:14px;margin:22px 0}#campaignCompleteStats{margin:20px 0;color:#7cf4df;font-size:12px;line-height:1.7}.campaignResultCard .resultActions{display:flex;flex-wrap:wrap;gap:10px}
+  @media(max-width:850px){#missionGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.missionCard{min-height:190px}.briefing{gap:20px}.menuActions #campaignContinueBtn{font-size:10px}#missionPanel{width:207px;top:184px;left:18px;padding:10px 12px}#missionTask{font-size:10px}#missionRadio{font-size:9px}body.arena-mode #matchPanel{width:175px;right:14px;top:14px}body.arena-mode #missionStrip{max-width:calc(100vw - 435px)}}
+  @media(max-width:660px){#missionPanel{left:12px;top:166px;width:195px}#missionRadio{max-height:59px;overflow:hidden}#missionStrip{top:16px;left:50%;transform:translateX(-50%);text-align:center;max-width:calc(100vw - 360px);width:calc(100vw - 360px)}body.arena-mode #missionStrip{max-width:calc(100vw - 375px);width:calc(100vw - 375px)}#missionStrip>.micro{font-size:6px}#sectorObjective{display:none}#missionGrid{gap:9px}.missionCard{padding:14px;min-height:195px}.missionSelectCard{padding:20px!important}.missionSelectCard h2{font-size:21px}.missionCard p{font-size:9px}.missionCard em{font-size:7px}.missionNumber{margin-bottom:8px}.arenaSetup{gap:8px}.arenaSetup select{font-size:9px}#spectatorBar{bottom:177px}#fieldPrompt{font-size:8px;bottom:154px}}
+  @media(max-height:650px){#missionPanel{top:170px}#missionRadio{max-height:58px;overflow:hidden}.missionSelectCard{margin:12px 0}.missionCard{min-height:170px}.missionCard p{min-height:0}}
+
 </style>
 </head>
 <body>
@@ -443,8 +597,10 @@
 
 <div id="hud">
   <div id="playerNameTag">NOMAD</div>
-  <div id="missionStrip"><span class="micro">ECLIPSE PROTOCOL / <span id="sectorIndex">01</span> · <span id="runProgress">ВОЛНА 0 / 12</span></span><strong id="sectorName">DOCK 07</strong><span id="sectorObjective">Зачистите сектор</span></div>
+  <div id="escortNameTag" hidden></div>
+  <div id="missionStrip"><span class="micro">ECLIPSE PROTOCOL / <span id="sectorIndex">01</span> · <span id="runProgress">МИССИЯ 1 / 6</span></span><strong id="sectorName">DOCK 07</strong><span id="sectorObjective">Зачистите сектор</span></div>
   <div id="topLeft" class="panel">
+    <div class="hudModeLine"><span id="modeHudLabel">КАМПАНИЯ</span><span id="matchClock">00:00</span></div>
     <div id="waveLine">
       <span id="waveLabel">ВОЛНА</span>
       <span id="waveNum">0</span>
@@ -460,6 +616,7 @@
   <div id="mapBox" class="panel">
     <div class="mapHeading micro"><span>РАДАР</span><span><i class="liveDot"></i>LIVE</span></div>
     <canvas id="minimap"></canvas>
+    <div class="mapLegend"><span><b class="friendly">●</b>ВЫ</span><span><b class="hostile">◆</b>ЦЕЛЬ</span><span id="mapZoneLegend" hidden><b class="hazard">◯</b>ЗОНА</span></div>
     <div id="fpsBox"><span id="fpsVal">60</span> FPS</div>
   </div>
 
@@ -467,6 +624,14 @@
     <div class="buildHead">ДОКТРИНА</div>
     <div id="buildChips"></div>
   </div>
+
+  <div id="matchPanel" class="panel" hidden><div class="matchPanelHead"><span>ТАБЛИЦА МАТЧА</span><strong id="matchScore">0</strong></div><div id="matchObjective"></div><div id="zoneReadout" hidden></div><div id="matchRoster"></div></div>
+  <div id="missionPanel" class="panel" hidden><div class="micro">ТЕКУЩАЯ ЗАДАЧА</div><strong id="missionTask"></strong><div id="missionCounter"></div><div class="missionTrack"><i id="missionFill"></i></div><p id="missionRadio"></p></div>
+  <div id="spectatorBar" hidden><button id="spectatorPrevBtn" type="button" aria-label="Предыдущий игрок">←</button><span>НАБЛЮДЕНИЕ<br><strong id="spectatorName"></strong></span><button id="spectatorNextBtn" type="button" aria-label="Следующий игрок">→</button></div>
+  <div id="respawnLoadoutPanel" hidden><label for="respawnLoadoutSetting">СНАРЯЖЕНИЕ СЛЕДУЮЩЕГО ВОЗРОЖДЕНИЯ<select id="respawnLoadoutSetting"><option value="assault">ШТУРМОВИК</option><option value="scout">РАЗВЕДЧИК</option><option value="heavy">ТЯЖЁЛЫЙ БОЕЦ</option><option value="specialist">СПЕЦИАЛИСТ</option></select></label></div>
+  <div id="zoneWarning" role="status" hidden></div>
+  <div id="countdownCue" hidden><span id="countdownLabel">ПРИГОТОВЬТЕСЬ</span><b id="countdownNumber">03</b></div>
+  <div id="damageDirection" class="directionCue" hidden></div><div id="zoneDirection" class="directionCue" hidden></div>
 
   <div id="bossWrap">
     <div id="bossName">HIVE QUEEN</div>
@@ -491,6 +656,7 @@
       <span class="barVal" style="font-size:9px;color:#6b7b8d">SPC</span>
     </div>
     <div class="barRow" id="grenadeRow"><span class="barLabel">ГРАНАТА</span><span class="barTrack"><span class="barFill" id="grenadeFill"></span></span><span class="barVal" id="grenadeText">G</span></div>
+    <div id="combatStatus">БОЕГОТОВНОСТЬ / НОРМА</div>
   </div>
 
   <div id="weaponBox" class="panel">
@@ -500,6 +666,7 @@
       <span id="ammoSep">/</span>
       <span id="ammoReserve">&#8734;</span>
     </div>
+    <div id="ammoState">ОРУЖИЕ ГОТОВО</div>
     <div id="reloadBar"><div id="reloadFill"></div></div>
     <div id="weaponRack"></div>
   </div>
@@ -511,7 +678,7 @@
 
   <div id="popups"></div>
   <div id="comboBox"><span id="comboCount">×1.5</span><div id="comboLabel">СЕРИЯ УБИЙСТВ</div><div id="comboTrack"><div id="comboFill"></div></div></div>
-  <div id="fieldPrompt"><strong id="prepHint"><kbd>B</kbd> СНАБЖЕНИЕ &nbsp; <kbd>N</kbd> НАЧАТЬ ВОЛНУ</strong><span><kbd>G</kbd> граната &nbsp; <kbd>ПКМ</kbd> точный огонь</span></div>
+  <div id="fieldPrompt"><strong id="prepHint"><kbd>B</kbd> СНАБЖЕНИЕ &nbsp; <kbd>N</kbd> НАЧАТЬ ВОЛНУ</strong><strong id="interactionHint" hidden></strong><span id="healHint" hidden></span><span id="grenadeHint"><kbd>G</kbd> граната &nbsp; </span><span><kbd>ПКМ</kbd> точный огонь</span></div>
 
   <div id="crosshair">
     <i></i><i></i><i></i><i></i><b></b>
@@ -525,25 +692,42 @@
 
 <div id="start" class="screen">
   <div class="briefing">
-    <div>
-      <div class="eyebrow">TACTICAL RESPONSE UNIT / 07</div>
+    <div class="briefingHero">
+      <div class="eyebrow" id="platformStatus">БРАУЗЕР · ЛОКАЛЬНЫЙ ЗАПУСК</div>
       <h1 class="title">PIXEL<br><em>PROTOCOL</em></h1>
       <div class="edition">OPERATION ECLIPSE</div>
-      <p class="intro">Станция больше не отвечает. Карантин нарушен. Пройдите через доки, криолабораторию и реактор. Зачищайте сектора, усиливайте снаряжение и не давайте рою окружить вас.</p>
-      <div class="menuActions"><button class="btn" id="deployBtn">НАЧАТЬ ОПЕРАЦИЮ ↗</button><button class="btn ghost" id="custBtn">БОЕЦ</button><button class="btn ghost" id="stationBtn">СТАНЦИЯ</button></div>
-      <div class="hint"><span id="menuCallsign">NOMAD</span> / ENTER — ВЫСАДКА &nbsp; / &nbsp; РЕКОРД <span id="menuBest">0</span> &nbsp; / &nbsp; ОБРАЗЦЫ <span id="menuSamples">0</span></div>
-    </div>
-    <aside class="briefingAside">
-      <div class="terminalHeading"><span>БРИФИНГ ОПЕРАЦИИ</span><span><i class="liveDot"></i>СВЯЗЬ УСТАНОВЛЕНА</span></div>
-      <div class="sectorRoute"><div class="routeNode"><b>01</b><span>DOCK 07</span><small>ГРУЗОВОЙ ТЕРМИНАЛ</small></div><div class="routeNode"><b>02</b><span>CRYO LAB</span><small>КРИОЛАБОРАТОРИЯ</small></div><div class="routeNode"><b>03</b><span>REACTOR CORE</span><small>ЯДРО РЕАКТОРА</small></div></div>
-      <div class="keys">
+      <p class="intro">Станция погасла. Протокол активирован.<br>Пройдите карантинную зону или выходите на арену. Выберите режим — и возвращайтесь с победой.</p>
+      <div class="operatorStatus"><span class="operatorBadge" aria-hidden="true">⌖</span><span><span id="menuCallsign">NOMAD</span><small>ОПЕРАТОР ГОТОВ К ВЫСАДКЕ</small></span></div>
+      <div class="menuActions"><button class="btn" id="deployBtn">НАЧАТЬ ОПЕРАЦИЮ</button><button class="btn ghost" id="campaignBtn">МИССИИ</button><button class="btn ghost" id="campaignContinueBtn" hidden>ПРОДОЛЖИТЬ КАМПАНИЮ</button><button class="btn ghost" id="custBtn">БОЕЦ</button><button class="btn ghost" id="stationBtn">СТАНЦИЯ</button></div>
+      <div class="menuMeta"><span>РЕКОРД <b id="menuBest">0</b></span><span>ОБРАЗЦЫ <b id="menuSamples">0</b></span><span>ENTER · ВЫСАДКА</span></div>
+      <details class="controlGuide"><summary>УПРАВЛЕНИЕ И ПОЛЕВЫЕ ПОДСКАЗКИ</summary><div class="keys">
         <div><span>Движение</span><kbd>W A S D</kbd></div><div><span>Огонь / прицел</span><kbd>ЛКМ / ПКМ</kbd></div>
         <div><span>Рывок</span><kbd>SPACE</kbd></div><div><span>Граната</span><kbd>G</kbd></div>
-        <div><span>Перезарядка</span><kbd>R</kbd></div><div><span>Оружие</span><kbd>1–9, 0 / Q E</kbd></div>
+        <div><span>Перезарядка</span><kbd>R</kbd></div><div><span>Оружие</span><kbd>1–5 / Q E</kbd></div>
         <div><span>Спринт</span><kbd>SHIFT</kbd></div><div><span>Снабжение</span><kbd>B</kbd></div>
-        <div><span>Фонарь</span><kbd>F</kbd></div><div><span>Пауза</span><kbd>ESC</kbd></div>
+        <div><span>Взаимодействие</span><kbd>V</kbd></div><div><span>Аптечка в BR</span><kbd>H</kbd></div><div><span>Фонарь</span><kbd>F</kbd></div><div><span>Пауза / настройки</span><kbd>ESC</kbd></div>
+      </div></details>
+    </div>
+    <aside class="briefingAside" aria-label="Выбор режима и комната">
+      <div class="terminalHeading"><span>ВЫБЕРИТЕ РЕЖИМ</span><span><i class="liveDot"></i>04 ПРОТОКОЛА</span></div>
+      <div class="modeGrid" role="group" aria-label="Режим игры">
+        <button type="button" class="modeCard selected" data-mode="campaign" aria-pressed="true" data-title="КАМПАНИЯ" data-description="Шесть сюжетных миссий на станции «Затмение». Восстановите сигнал, спасите выжившего и остановите источник заражения." data-rules="6 миссий · сюжет и задачи · контрольные точки · боссы">
+          <span class="modeIcon" aria-hidden="true"><svg viewBox="0 0 100 80"><path class="planFloor" d="M5 11h38v24H28v10h24V28h41v41H53V56H16V35H5Z"/><path class="planBlock" d="M10 16h15v14H10Zm51 18h24v12H61Zm-2 21h10v8H59Z"/><path class="planPath" d="M32 23v27h23v-9h21v18"/><circle class="planFriend" cx="32" cy="23" r="3"/><circle class="planFriend" cx="32" cy="50" r="2"/><circle class="planFriend" cx="55" cy="41" r="2"/><path class="planEnemy" d="m76 55 4 4-4 4-4-4Z"/></svg></span><span class="modeCardTitle">КАМПАНИЯ<small>OPERATION ECLIPSE</small></span><span class="modeCardMeta">6 МИССИЙ<br>СЮЖЕТ И ЗАДАЧИ</span>
+        </button>
+        <button type="button" class="modeCard" data-mode="duel" aria-pressed="false" data-title="ДУЭЛЬ · 1 НА 1" data-description="Один соперник. Одинаковый старт. Используйте укрытия и рывок, чтобы забрать решающий раунд." data-rules="1 на 1 · первый до 5 побед · новый раунд после поражения">
+          <span class="modeIcon" aria-hidden="true"><svg viewBox="0 0 100 80"><path class="planFloor" d="M5 10h90v60H5Z"/><path class="planLane" d="M50 10v60M5 40h90"/><path class="planBlock" d="M28 18h12v13H28Zm32 0h12v13H60ZM28 49h12v13H28Zm32 0h12v13H60Z"/><path class="planFriend" d="m15 36 6 4-6 4Z"/><path class="planEnemy" d="m85 36-6 4 6 4Z"/><path class="planPath" d="M23 40h17m20 0h17"/><circle class="planZone" cx="50" cy="40" r="5"/></svg></span><span class="modeCardTitle">1 НА 1<small>DUEL PROTOCOL</small></span><span class="modeCardMeta">ОДИН СОПЕРНИК<br>ДО 5 ПОБЕД</span>
+        </button>
+        <button type="button" class="modeCard" data-mode="ffa" aria-pressed="false" data-title="КАЖДЫЙ САМ ЗА СЕБЯ" data-description="Союзников нет. Возвращайтесь в бой после поражения, набирайте устранения и поднимайтесь в таблице матча." data-rules="20 устранений или 5 минут · возрождения · все против всех">
+          <span class="modeIcon" aria-hidden="true"><svg viewBox="0 0 100 80"><path class="planFloor" d="M5 10h90v60H5Z"/><path class="planLane" d="M50 10v60M5 40h90M17 10v60M83 10v60"/><path class="planBlock" d="M27 18h15v13H27Zm31 0h15v13H58ZM27 49h15v13H27Zm31 0h15v13H58Z"/><circle class="planFriend" cx="50" cy="40" r="3"/><path class="planEnemy" d="m17 17 3 3-3 3-3-3Zm66 40 3 3-3 3-3-3ZM47 64l3 3-3 3-3-3ZM81 27l3 3-3 3-3-3ZM14 44l3 3-3 3-3-3Z"/></svg></span><span class="modeCardTitle">КАЖДЫЙ ЗА СЕБЯ<small>FREE FOR ALL</small></span><span class="modeCardMeta">20 УСТРАНЕНИЙ<br>5 МИНУТ</span>
+        </button>
+        <button type="button" class="modeCard" data-mode="royale" aria-pressed="false" data-title="БАТЛ РОЯЛЬ" data-description="Одна жизнь. Выбирайте позицию и следите за границей зоны. Побеждает последний выживший." data-rules="Без возрождений · сужающаяся зона · последний выживший">
+          <span class="modeIcon" aria-hidden="true"><svg viewBox="0 0 100 80"><path class="planFloor" d="M17 5h66l12 12v46L83 75H17L5 63V17Z"/><path class="planLane" d="M36 7v66M64 7v66M7 27h86M7 53h86"/><path class="planBlock" d="M17 14h11v7H17Zm55 44h11v8H72Zm-25-24h7v9h-7Z"/><circle class="planZone" cx="53" cy="38" r="24"/><circle class="planZone" cx="53" cy="38" r="14" stroke-dasharray="2 3" opacity=".45"/><circle class="planFriend" cx="47" cy="45" r="3"/><path class="planEnemy" d="m72 15 3 3-3 3-3-3Zm-48 34 3 3-3 3-3-3Zm44 0 3 3-3 3-3-3Z"/></svg></span><span class="modeCardTitle">БАТЛ РОЯЛЬ<small>LAST OPERATOR</small></span><span class="modeCardMeta">ОДНА ЖИЗНЬ<br>СУЖЕНИЕ ЗОНЫ</span>
+        </button>
       </div>
-      <div class="briefFooter"><span>3 БОССА / 10 ОРУЖИЙ</span><b>БОСС: КАЖДАЯ 3-Я ВОЛНА</b></div>
+      <div class="modeBrief" aria-live="polite"><div class="modeBriefHeading"><strong id="modeTitle">КАМПАНИЯ</strong><span id="modeStatus">ОДИНОЧНАЯ ИГРА</span></div><p id="modeDescription">Шесть сюжетных миссий на станции «Затмение». Восстановите сигнал, спасите выжившего и остановите источник заражения.</p><p id="modeRules">6 миссий · сюжет и задачи · контрольные точки · боссы</p></div>
+      <div class="modeOptions"><label for="modePlayersSetting">БОТЫ НА АРЕНЕ<select id="modePlayersSetting" disabled><option value="3">3 бота</option><option value="7" selected>7 ботов</option><option value="15">15 ботов</option><option value="23">23 бота</option><option value="31">31 бот · 32 участника</option></select></label><span id="modeSession">ЛОКАЛЬНАЯ ИГРА</span></div>
+      <div class="arenaSetup"><label for="botDifficultySetting">УРОВЕНЬ БОТОВ<select id="botDifficultySetting"><option value="easy">НОВИЧОК</option><option value="normal" selected>БОЕЦ</option><option value="hard">ВЕТЕРАН</option></select></label><label for="loadoutSetting">СНАРЯЖЕНИЕ В FFA<select id="loadoutSetting"><option value="assault">ШТУРМОВИК</option><option value="scout">РАЗВЕДЧИК</option><option value="heavy">ТЯЖЁЛЫЙ БОЕЦ</option><option value="specialist">СПЕЦИАЛИСТ</option></select></label></div>
+      <div class="roomLobby"><div class="roomHeading"><span>КОМНАТА ДЛЯ ДРУЗЕЙ</span><span id="roomStatus" role="status">НЕТ ПОДКЛЮЧЕНИЯ</span></div><div class="roomActions"><input id="roomCodeSetting" type="text" maxlength="12" autocomplete="off" spellcheck="false" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="roomJoinBtn" type="button">ВОЙТИ</button><button id="roomCreateBtn" type="button">СОЗДАТЬ</button><button id="roomLeaveBtn" type="button" hidden>ПОКИНУТЬ КОМНАТУ</button></div><button id="roomReadyBtn" class="btn ghost" type="button" hidden>Я ГОТОВ</button><div id="roomRoster" aria-live="polite"></div><p class="lobbyNote">Тренировка с ботами доступна сразу. Для игры с друзьями создайте комнату на подключённом сервере.</p></div>
     </aside>
   </div>
 </div>
@@ -587,9 +771,16 @@
     <div class="rule"></div>
     <div class="micro" style="margin-bottom:10px">УПРАВЛЕНИЕ</div>
     <div id="bindPanel"></div>
-    <div class="bindHint">Нажмите «НАЗНАЧИТЬ» и затем клавишу. ESC — отмена. Цифры 1–0 выбирают оружие и карточки доктрины и не переназначаются.</div>
+    <div class="bindHint">Нажмите «НАЗНАЧИТЬ» и затем клавишу. ESC — отмена. Цифры 1–5 выбирают слоты оружия, 1–3 — карточки доктрины и не переназначаются.</div>
     <button class="btn ghost" id="bindReset">СБРОСИТЬ УПРАВЛЕНИЕ</button>
-    <div class="settings"><label>ГРОМКОСТЬ <input id="volumeSetting" type="range" min="0" max="100" value="55" aria-label="Громкость"></label><label><input id="motionSetting" type="checkbox" checked> Тряска камеры</label><label><input id="dmgnumSetting" type="checkbox" checked> Числа урона</label><label>ПИКСЕЛЬНЫЙ СТИЛЬ<select id="pixelSetting"><option value="2" selected>ДЕТАЛЬНЫЙ · 2 PX</option><option value="3">КЛАССИКА · 3 PX</option><option value="4">КРУПНЫЙ · 4 PX</option><option value="6">РЕТРО · 6 PX</option><option value="0">ОБЫЧНАЯ 3D-ГРАФИКА</option></select></label><p class="pixelNote">Детальный режим сохраняет мелкие части оружия и брони. Ступени света, чёткие силуэты и пиксельные материалы.</p></div>
+    <div class="settings">
+      <label>ОБЩАЯ ГРОМКОСТЬ <output class="settingValue" for="volumeSetting" id="volumeValue">55%</output><input id="volumeSetting" type="range" min="0" max="100" value="55" aria-label="Общая громкость"></label>
+      <label>ЭФФЕКТЫ <output class="settingValue" for="sfxVolumeSetting" id="sfxVolumeValue">85%</output><input id="sfxVolumeSetting" type="range" min="0" max="100" value="85" aria-label="Громкость звуковых эффектов"></label>
+      <label>МУЗЫКА И АТМОСФЕРА <output class="settingValue" for="musicVolumeSetting" id="musicVolumeValue">35%</output><input id="musicVolumeSetting" type="range" min="0" max="100" value="35" aria-label="Громкость музыки"></label>
+      <label>КАЧЕСТВО ГРАФИКИ<select id="qualitySetting"><option value="low">БЫСТРОЕ · МЕНЬШЕ ЭФФЕКТОВ</option><option value="balanced" selected>БАЛАНС · РЕКОМЕНДУЕТСЯ</option><option value="high">ВЫСОКОЕ · ПОЛНЫЕ ЭФФЕКТЫ</option></select></label>
+      <label class="checkSetting"><input id="motionSetting" type="checkbox" checked> Тряска камеры</label><label class="checkSetting"><input id="dmgnumSetting" type="checkbox" checked> Числа урона</label>
+      <p class="qualityNote">Плавная 3D-графика. Настройка качества регулирует освещение, тени и эффекты. Бирюзовый — ваш боец, коралловый — противник, янтарный — опасность.</p>
+    </div>
     <div>
       <button class="btn" id="resumeBtn">ПРОДОЛЖИТЬ</button>
       <button class="btn ghost" id="quitBtn">В МЕНЮ</button>
@@ -658,6 +849,24 @@
   </div>
 </div>
 
+<div id="arenaResults" class="screen"><div class="card">
+  <div class="eyebrow">ARENA / РЕЗУЛЬТАТ МАТЧА</div><h2 id="arenaResultTitle">МАТЧ ЗАВЕРШЁН</h2><p id="arenaResultSubtitle">Операторы покидают арену.</p><div id="arenaResultStats"></div>
+  <div class="resultActions"><button id="btnArenaRetry" class="btn" type="button">ЕЩЁ ОДИН МАТЧ ↗</button><button id="btnArenaMenu" class="btn ghost" type="button">ВЫБРАТЬ РЕЖИМ</button></div>
+  <div class="hint">НОВЫЙ МАТЧ · РАВНЫЙ СТАРТ</div>
+</div></div>
+
+<div id="missionSelectScreen" class="screen"><div class="card missionSelectCard">
+  <div class="eyebrow">OPERATION ECLIPSE / СЮЖЕТНАЯ КАМПАНИЯ</div><h2>ШЕСТЬ СИГНАЛОВ В ТЕМНОТЕ</h2><p class="missionIntro">Каждая миссия открывает следующую. Контрольные точки сохраняют задачу и снаряжение между этапами.</p>
+  <div id="missionGrid"></div><button class="btn ghost" id="missionSelectBack">НАЗАД К РЕЖИМАМ</button>
+</div></div>
+<div id="campaignComplete" class="screen"><div class="card campaignResultCard">
+  <div class="eyebrow">СИГНАЛ ПОДТВЕРЖДЁН / КАМПАНИЯ</div><h2 id="campaignCompleteTitle">МИССИЯ ЗАВЕРШЕНА</h2><p id="campaignCompleteStory"></p><div id="campaignCompleteStats"></div>
+  <div class="resultActions"><button class="btn" id="campaignNextBtn">СЛЕДУЮЩАЯ МИССИЯ ↗</button><button class="btn ghost" id="campaignMenuBtn">К МИССИЯМ</button></div><div class="hint">СНАРЯЖЕНИЕ СОХРАНЕНО · НАГРАДА ЗАЧИСЛЕНА</div>
+</div></div>
+<div id="campaignFailed" class="screen"><div class="card campaignResultCard">
+  <div class="eyebrow">СИГНАЛ ПРЕРВАН / КАМПАНИЯ</div><h2>ОПЕРАЦИЯ ПРЕРВАНА</h2><p id="campaignFailedReason">Оператор потерян.</p>
+  <div class="resultActions"><button class="btn" id="checkpointRetryBtn">С КОНТРОЛЬНОЙ ТОЧКИ ↗</button><button class="btn ghost" id="missionRetryBtn">МИССИЯ СНАЧАЛА</button><button class="btn ghost" id="campaignFailedMenuBtn">К МИССИЯМ</button></div><div class="hint">КОНТРОЛЬНАЯ ТОЧКА ВОССТАНАВЛИВАЕТ СНАРЯЖЕНИЕ НА НАЧАЛО ЭТАПА</div>
+</div></div>
 <script type="module">
 /*__GAME_BUNDLE__*/
 </script>

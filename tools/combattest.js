@@ -23,7 +23,7 @@ async function main() {
   };
   vm.createContext(context);
   for (const file of ['00-util.js', '05-save.js', '15-simulation.js', '40-models.js', '45-customize.js',
-    '60-weapons.js', '70-enemies.js', '80-player.js', '85-world.js', '91-damagenumbers.js',
+    '60-weapons.js', '62-combat-core.js', '70-enemies.js', '80-player.js', '85-world.js', '91-damagenumbers.js',
     '92-upgrades.js']) {
     new vm.Script(fs.readFileSync(path.join(workspace, 'src', file), 'utf8'), { filename: file }).runInContext(context);
   }
@@ -655,6 +655,106 @@ async function main() {
     p.barrelHeat = 8;
     equip(game, 'shotgun');
     assert.strictEqual(p.barrelHeat, 0, 'a swapped weapon inherited the heat');
+  });
+
+  test('the shared pure catalog defines25 distinct usable weapons', () => {
+    const catalog = require('../src/60-weapons.js');
+    assert.strictEqual(catalog.WEAPONS.length, 25);
+    assert.strictEqual(new Set(catalog.WEAPONS.map(w => w.id)).size, 25);
+    assert.strictEqual(catalog.WEAPONS.filter(w => w.fire === 'melee').length, 5);
+    for (const w of catalog.WEAPONS) {
+      assert(catalog.WEAPON_BY_ID[w.id] === w && w.damage > 0 && w.interval > 0 && w.range > 0, w.id);
+      assert(w.usesAmmo === false || catalog.AMMO_TYPES[w.ammo], w.id + ' has no reserve type');
+    }
+  });
+  test('carried hotkeys use pistol, three primaries and the equipped melee', () => {
+    const game = fixture(), p = game.player, controls = input();
+    for (const id of ['sniper', 'crossbow', 'lmg', 'spear']) p.giveWeapon(id);
+    p.setWeapon(A.WEAPONS.findIndex(w => w.id === 'spear'));
+    const carried = Array.from(p.loadoutList(), i => A.WEAPONS[i].id);
+    assert.strictEqual(carried.length, 5); assert.strictEqual(carried[0], 'pistol'); assert.strictEqual(carried[4], 'spear');
+    controls.pressed.Digit2 = true; tick(game, controls); assert.strictEqual(p.weapon.id, carried[1]);
+    controls.pressed.Digit5 = true; tick(game, controls); assert.strictEqual(p.weapon.id, 'spear');
+    assert(p.owned.knife, 'swapping melee removed the starter knife');
+  });
+  test('burst rifle commits three spaced rounds and cannot switch halfway', () => {
+    const game = fixture(), controls = input(), w = equip(game, 'burstRifle'), p = game.player;
+    controls.mouseDown = true; tick(game, controls); assert.strictEqual(game.stats.shots, 1);
+    p.setWeapon(0); p.startReload(); assert.strictEqual(p.weapon.id, w.id); assert.strictEqual(p.reloading, 0);
+    for (let i = 0; i < 40; i++) tick(game, controls);
+    assert.strictEqual(game.stats.shots, 3); assert.strictEqual(p.mag, w.mag - 3);
+    controls.mouseDown = false; tick(game, controls); controls.mouseDown = true; tick(game, controls);
+    assert.strictEqual(game.stats.shots, 4);
+  });
+  test('online carried slots preserve server order rather than catalog order', () => {
+    const game = fixture(), p = game.player; game.arena = {};
+    p.weaponSlots = ['crossbow', 'revolver', 'machete'];
+    assert.deepStrictEqual(Array.from(p.loadoutList(), i => A.WEAPONS[i].id), p.weaponSlots);
+  });
+  test('burst rifle stops cleanly when its magazine cannot supply all three rounds', () => {
+    const game = fixture(), controls = input(); equip(game, 'burstRifle'); game.player.mags.burstRifle = 2;
+    controls._onDown(mouseEvent); controls._onUp(mouseEvent);
+    for (let i = 0; i < 20; i++) tick(game, controls);
+    assert.strictEqual(game.stats.shots, 2); assert.strictEqual(game.player._burstRemaining, 0); assert.strictEqual(game.player.mag, 0);
+  });
+  for (const id of ['knife', 'machete', 'axe', 'spear', 'hammer']) for (const heavy of [false, true]) {
+    test(id + (heavy ? ' heavy' : ' light') + ' has windup, one hit, recovery and no ammunition cost', () => {
+      const game = fixture(), w = equip(game, id), p = game.player, target = enemy(game, 0, 1.2);
+      const spec = heavy ? Object.assign({}, w, w.heavy) : w;
+      const ammo = JSON.stringify(p.ammo), index = p.weaponIndex;
+      assert(p.beginMelee(heavy, 0, 30)); p.updateMelee(spec.windup - 0.001); assert.strictEqual(target.hp, 1000);
+      p.updateMelee(0.002); near(target.hp, 1000 - spec.damage);
+      for (let i = 0; i < 5; i++) p.updateMelee(spec.activeTime / 6);
+      near(target.hp, 1000 - spec.damage); assert.strictEqual(game.confirmations.length, 1);
+      p.setWeapon(0); assert.strictEqual(p.weaponIndex, index); assert(!p.beginMelee(heavy, 0, 30));
+      assert.strictEqual(JSON.stringify(p.ammo), ammo); assert.strictEqual(game.stats.shots, 0);
+      p.updateMelee(spec.recovery + 0.1); assert.strictEqual(p.meleeAttack, null);
+      assert(p.fireTimer > 0, 'switching/recovery cancelled the attack cooldown');
+    });
+  }
+  test('melee respects walls and its front arc, while overlap still lands', () => {
+    const game = fixture(), p = game.player; equip(game, 'machete');
+    const front = enemy(game, 0, 1.8), back = enemy(game, 0, -1.8), overlap = enemy(game, 0, 0);
+    game.level.raycastWall = (x, z, dx, dz, range) => dz > 0.5 && range >= 0.7 ? { x, z: z + 0.7, dist: 0.7 } : null;
+    p.beginMelee(false, 0, 30); p.updateMelee(0.2);
+    assert.strictEqual(front.hp, 1000); assert.strictEqual(back.hp, 1000); assert(overlap.hp < 1000);
+  });
+  test('melee target cap is per attack and a fast right click selects heavy attack', () => {
+    const game = fixture(), controls = input(), p = game.player; equip(game, 'knife');
+    const a = enemy(game, -0.1, 1.2), b = enemy(game, 0.1, 1.2);
+    controls._onDown({ ...mouseEvent, button: 2 }); controls._onUp({ ...mouseEvent, button: 2 }); tick(game, controls);
+    assert(p.meleeAttack && p.meleeAttack.heavy); assert(!controls.rightPressed);
+    for (let i = 0; i < 30; i++) tick(game, controls);
+    assert.strictEqual(Number(a.hp < 1000) + Number(b.hp < 1000), 1);
+    assert.strictEqual(game.stats.meleeAttacks, 1);
+  });
+  test('a crossbow bolt deals direct damage without splash or muzzle combustion', () => {
+    const game = fixture(), w = equip(game, 'crossbow'), target = enemy(game, 0, 4), nearby = enemy(game, 1.1, 4);
+    let flashes = 0, smoke = 0; game.fx.lights.flash = () => flashes++; game.fx.smoke.emit = () => smoke++;
+    game.player.shoot(0, 4);
+    for (let i = 0; i < 15; i++) game.projectiles.update(1 / 60, game.player);
+    near(target.hp, 1000 - w.damage); assert.strictEqual(nearby.hp, 1000);
+    assert.strictEqual(game.explosions.length, 0); assert.strictEqual(flashes, 0); assert.strictEqual(smoke, 0);
+    assert.strictEqual(game.stats.hits, 1); assert.strictEqual(game.projectiles.rockets.length, 0);
+  });
+  test('grenades rise, bounce from cover and explode at their bounded fuse', () => {
+    const game = fixture(), w = A.WEAPON_BY_ID.grenadeLauncher, p = game.player;
+    game.projectiles.spawnRocket(0, 1, 0, 0, w);
+    game.projectiles.update(0.1, p); const round = game.projectiles.rockets[0];
+    assert(round.y > 1 && round.vy < 4.8 && round.vy > 0);
+    game.level.raycastWall = (x, z, dx, dz, range) => dz > 0 ? { x, z: z + Math.min(0.1, range), dist: Math.min(0.1, range) } : null;
+    game.projectiles.update(0.1, p); assert(round.vz < 0 && round.bounces === 1); assert.strictEqual(game.explosions.length, 0);
+    game.level.raycastWall = () => null;
+    for (let i = 0; i < 90; i++) game.projectiles.update(1 / 60, p);
+    assert.strictEqual(game.projectiles.rockets.length, 0); assert.strictEqual(game.explosions.length, 1);
+    near(game.explosions[0][3], w.splash); near(game.explosions[0][4], w.splashRadius);
+  });
+  test('mixed projectile render pools stay capped and clear together', () => {
+    const game = fixture(), types = ['crossbow', 'grenadeLauncher', 'rocket'];
+    for (let i = 0; i < 60; i++) game.projectiles.spawnRocket(i, 1, 0, 0, A.WEAPON_BY_ID[types[i % 3]]);
+    game.projectiles.render(); assert.strictEqual(game.projectiles.rockets.length, 32);
+    assert.strictEqual(game.projectiles.rocketMesh.count + game.projectiles.boltMesh.count + game.projectiles.grenadeMesh.count, 32);
+    game.projectiles.clear(); assert.strictEqual(game.projectiles.rocketMesh.count + game.projectiles.boltMesh.count + game.projectiles.grenadeMesh.count, 0);
   });
 
   console.log('COMBAT_OK cases=' + cases + ' weapons=' + A.WEAPONS.length + ' perks=' + A.PERKS.length);

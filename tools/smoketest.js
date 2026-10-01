@@ -58,6 +58,9 @@ checkPublicSurface();
 
 const shotIdx = args0.indexOf('--shot');
 const SHOT = shotIdx >= 0 ? path.resolve(args0[shotIdx + 1]) : null;
+// Simulation always executes every tick. Software-WebGL regression runs
+// sample presentation at 10 Hz; --every-frame restores a full GPU stress run.
+const RENDER_STRIDE = SHOT || args0.includes('--every-frame') ? 1 : 6;
 const FRAMES = parseInt(args0.find((a) => /^\d+$/.test(a)) || '420', 10);
 /* screenshot runs stop mid-combat; test runs continue into the death screen */
 const KILL_AT_END = !SHOT;
@@ -190,7 +193,7 @@ const PROBE = `
         if (g.state !== 'menu' || !document.getElementById('start').classList.contains('show')) {
           fail('MENU', 'initial menu is not visible');
         }
-        pixelProbe(g, (condition, kind, message) => { if (!condition) fail(kind, message); });
+        smoothRenderProbe(g, (condition, kind, message) => { if (!condition) fail(kind, message); });
         g.update(1/60);
         freezeShowcase(g);
         out.textContent = (log.some(isFailure) ? 'RESULT_FAIL' : 'RESULT_OK') +
@@ -215,7 +218,11 @@ const PROBE = `
 
       let featureResults = 'skipped for screenshot';
       if (${KILL_AT_END}) {
+        const campaignStart = g.startRun.bind(g);
+        g.startRun = (seed) => campaignStart(seed, 'campaign', { legacyWaves: true });
+        g.startRun();
         featureResults = 'replay=' + replayProbe(g, window.PixelProtocol) + '; ' + featureProbe(g);
+
       }
 
       // the bot aims at whatever is closest, so kills/loot/gore all get hit
@@ -316,7 +323,7 @@ const PROBE = `
 
         g.update(1/60);
         resolvePerk();
-        g.render();
+        if (f % ${RENDER_STRIDE} === 0 || f === ${FRAMES} - 1) g.render();
         stats.maxEnemies = Math.max(stats.maxEnemies, g.enemies.aliveCount);
         stats.maxWave = Math.max(stats.maxWave, g.wave);
 
@@ -471,6 +478,15 @@ const PROBE = `
       out.textContent = 'RESULT_THROW\\n' + (e && e.stack ? e.stack : String(e)) +
         '\\nISSUES(' + log.length + '):\\n' + log.slice(0,40).join('\\n');
       finished = true;
+    } finally {
+      // A probe owns its lifecycle. Do not leave the boot rAF, room heartbeat
+      // or live AudioContext running after recording the result: they can
+      // keep headless virtual time busy indefinitely after assertions finish.
+      window.requestAnimationFrame = function () { return 0; };
+      g.update = function () {}; g.render = function () {};
+      if (g.network && g.network.backgroundTimer) clearInterval(g.network.backgroundTimer);
+      const audio = window.AS3D && window.AS3D.sfx;
+      if (audio && audio.ctx && audio.ctx.state !== 'closed') audio.ctx.close().catch(function () {});
     }
   }
 
@@ -515,7 +531,8 @@ const PROBE = `
     }
     cust.commit(); cust.hide();
     check(JSON.stringify(g.player.owned) === ownedBefore, 'LOOK', 'preview changed run inventory');
-    check(g.player.model.head.parent === g.player.root && g.player.callsign === nickname,
+    check(g.player.model.head.parent === g.player.model.poseRoot &&
+      g.player.model.upperBody.parent === g.player.root && g.player.callsign === nickname,
       'LOOK', 'profile commit did not update the live marine');
 
     // Generic controls exercise InputState itself, not only the nickname
@@ -603,87 +620,18 @@ const PROBE = `
     }
   }
 
-  function pixelProbe(g, check) {
-    const fx = g.pixelFX, renderer = g.renderer;
-    check(!!fx && !!window.AS3D.TWEEN, 'PIXEL', 'pixel renderer or tween.js is missing');
-    if (!fx) return;
-    const saved = { width: fx.width, height: fx.height, pixelSize: fx.pixelSize,
-      target: renderer.getRenderTarget(), autoReset: renderer.info.autoReset, motion: g.motionScale };
-    try {
-      for (const mode of [0, 2, 3, 4, 6]) {
-        fx.setPixelSize(mode); fx.resize(319, 181);
-        check(fx.pixelSize === mode, 'PIXEL', 'pixel mode rejected: ' + mode);
-        const divisor = mode || 2;
-        const logicalWidth = Math.ceil(319 / divisor), logicalHeight = Math.ceil(181 / divisor);
-        check(fx.logicalWidth === logicalWidth && fx.logicalHeight === logicalHeight && fx.renderScale === 2,
-          'PIXEL', 'odd resize produced incorrect logical dimensions or supersampling scale for ' + mode);
-        check(fx.target.width === logicalWidth * 2 && fx.target.height === logicalHeight * 2,
-          'PIXEL', 'scene target is not supersampled for mode ' + mode);
-        check(fx.detailTarget && fx.detailTarget.width === logicalWidth && fx.detailTarget.height === logicalHeight,
-          'PIXEL', 'detail target is not at logical resolution for mode ' + mode);
-        check(fx.target.depthTexture && fx.target.depthTexture.isDepthTexture,
-          'PIXEL', 'scene target has no readable depth texture');
-        check(fx.uniforms.sourceSize.value.x === logicalWidth && fx.uniforms.sourceSize.value.y === logicalHeight &&
-          Math.abs(fx.uniforms.texel.value.x - 1 / logicalWidth) < 1e-10 &&
-          Math.abs(fx.uniforms.texel.value.y - 1 / logicalHeight) < 1e-10,
-          'PIXEL', 'art shader sampling grid does not match logical dimensions');
-        check(fx.detailTarget && fx.detailTarget.texture.magFilter === window.AS3D.THREE.NearestFilter,
-          'PIXEL', 'styled pixels are smoothed instead of nearest-neighbour scaled');
-        g.render();
-        check(renderer.getRenderTarget() === saved.target && renderer.info.autoReset === saved.autoReset,
-          'PIXEL', 'render did not restore render target or statistics state');
-        check(renderer.getContext().getError() === 0, 'GL', 'pixel mode ' + mode + ' generated a GL error');
-      }
-      for (const invalid of [-1, 5, NaN, 'invalid']) {
-        fx.setPixelSize(invalid);
-        check(fx.pixelSize === 2, 'PIXEL', 'invalid pixel mode was not normalized');
-      }
-      // A tiny unlit reference scene catches a black/incorrect colour pass
-      // even when the GLSL compiles and all framebuffer sizes look valid.
-      const THREE = window.AS3D.THREE;
-      const sampleScene = new THREE.Scene();
-      const sampleCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 5);
-      sampleCamera.position.z = 2;
-      const sampleGeo = new THREE.PlaneGeometry(0.9, 0.9);
-      const sampleMat = new THREE.MeshBasicMaterial({ color: 0x4080c0 });
-      sampleScene.add(new THREE.Mesh(sampleGeo, sampleMat));
-      const clearColor = renderer.getClearColor(new THREE.Color()).clone();
-      const clearAlpha = renderer.getClearAlpha(), reveal = fx.uniforms.reveal.value;
-      try {
-        renderer.setClearColor(0x000000, 0);
-        fx.setPixelSize(2); fx.resize(32, 24); fx.uniforms.reveal.value = 1;
-        fx.render(sampleScene, sampleCamera);
-        const center = new Uint8Array(4), background = new Uint8Array(4);
-        renderer.readRenderTargetPixels(fx.detailTarget, 8, 6, 1, 1, center);
-        renderer.readRenderTargetPixels(fx.detailTarget, 0, 0, 1, 1, background);
-        check(center[2] > center[1] && center[1] > center[0] && center[0] > 10 && center[3] > 245,
-          'PIXEL', 'unlit reference quad lost colour or became black: ' + Array.from(center));
-        check(background[3] < 5, 'PIXEL', 'empty art target lost transparent background: ' + Array.from(background));
-        check(renderer.getContext().getError() === 0, 'GL', 'reference art pass generated a GL error');
-      } finally {
-        renderer.setClearColor(clearColor, clearAlpha); fx.uniforms.reveal.value = reveal;
-        sampleGeo.dispose(); sampleMat.dispose();
-      }
-      fx.setPixelSize(2); fx.resize(saved.width, saved.height);
-      const width = fx.target.width, height = fx.target.height;
-      g.motionScale = 1; g.revealSector();
-      check(fx.uniforms.reveal.value < 1, 'TWEEN', 'sector reveal did not begin');
-      for (let i = 0; i < 60; i++) {
-        g.update(1/60);
-        if (g.state === 'perk') g.choosePerk(g.perkOffer[0].id);
-        if (g.state === 'upgrade') g.closeUpgrades();
-      }
-      check(Math.abs(fx.uniforms.reveal.value - 1) < 1e-6, 'TWEEN', 'sector reveal failed to finish');
-      check(fx.target.width === width && fx.target.height === height, 'PIXEL', 'reveal changed render target size');
-      check(g.presentation.getAll().length === 0, 'TWEEN', 'completed reveal retained its tween');
-    } finally {
-      g.motionScale = saved.motion;
-      fx.setPixelSize(saved.pixelSize); fx.resize(saved.width, saved.height);
-      renderer.setRenderTarget(saved.target);
-      renderer.info.autoReset = saved.autoReset;
-    }
-    check(fx.width === saved.width && fx.height === saved.height && fx.pixelSize === saved.pixelSize,
-      'PIXEL', 'probe did not restore render dimensions and mode');
+  function smoothRenderProbe(g, check) {
+    const renderer = g.renderer;
+    check(!g.pixelFX && !document.getElementById('pixelSetting'), 'RENDER', 'pixel pipeline still exists');
+    check(renderer.getContext().getContextAttributes().antialias, 'RENDER', 'antialiasing disabled');
+    g.render(); check(renderer.getContext().getError() === 0, 'GL', 'native render generated an error');
+    const motion = g.motionScale;
+    g.motionScale = 1; g.revealSector();
+    check(Number(g.canvas.style.opacity) < 1, 'TWEEN', 'sector reveal did not begin');
+    for (let n = 0; n < 60; n++) { g.presentationTime += 1000 / 60; g.presentation.update(g.presentationTime, false); }
+    check(Math.abs(Number(g.canvas.style.opacity) - 1) < 1e-6, 'TWEEN', 'reveal failed to complete');
+    check(g.presentation.getAll().length === 0, 'TWEEN', 'completed tween retained');
+    g.motionScale = motion;
   }
 
   function featureProbe(g) {
@@ -739,25 +687,25 @@ const PROBE = `
     }
 
     profileProbe(g, check);
-    pixelProbe(g, check);
-    check(A.WEAPONS.length === 10, 'ARSENAL', 'expected ten weapons');
+    smoothRenderProbe(g, check);
+    check(A.WEAPONS.length === 25, 'ARSENAL', 'expected 25 weapons');
     for (const weapon of A.WEAPONS) p.giveWeapon(weapon.id);
     for (const type of new Set(A.WEAPONS.map((w) => w.ammo))) if (type !== 'none') p.giveAmmo(type, 99999);
-    check(p.ownedList().length === 10, 'ARSENAL', 'not all ten weapons could be granted');
+    check(p.ownedList().length === 25, 'ARSENAL', 'not all 25 weapons could be granted');
     for (let i = 0; i < A.WEAPONS.length; i++) {
-      const code = 'Digit' + ((i + 1) % 10);
-      clearInput(); key(code);
-      p.update(1/60, input, p.x, p.z + 3); input.endFrame();
+      clearInput(); p.meleeAttack = null; p._burstRemaining = 0; p.setWeapon(i);
       const w = A.WEAPONS[i];
-      check(p.weapon.id === w.id, 'ARSENAL', code + ' did not equip ' + w.id);
-      p.fireTimer = 0; p.reloading = 0; p.triggerLatched = false; p.spin = 1;
-      p.mags[w.id] = w.mag;
-      const shots = g.stats.shots;
-      input.mouseDown = true;
+      check(p.weapon.id === w.id, 'ARSENAL', 'did not equip ' + w.id);
+      p.fireTimer = 0; p.reloading = 0; p.triggerLatched = false; p.spin = 1; p.mags[w.id] = w.mag;
+      const shots = g.stats.shots; input.mouseDown = true;
       p.update(1/60, input, p.x, p.z + 3); input.endFrame();
-      check(g.stats.shots > shots && p.mag < w.mag, 'ARSENAL', w.id + ' did not fire and consume a round');
+      check(w.fire === 'melee' ? !!p.meleeAttack : g.stats.shots > shots && p.mag < w.mag, 'ARSENAL', w.id + ' attack failed');
       g.render();
     }
+    p.meleeAttack=null; p._burstRemaining=0; p.setWeapon(A.WEAPONS.findIndex(w=>w.id==='autocannon'));
+    const slots=p.loadoutList();
+    for(let slot=0;slot<slots.length;slot++) { clearInput(); key('Digit'+(slot+1)); p.update(1/60,input,p.x,p.z+3); input.endFrame(); check(p.weaponIndex===slots[slot], 'SLOTS', 'digit did not select carried slot'); }
+    p.setWeapon(A.WEAPONS.findIndex(w=>w.id==='autocannon'));
     clearInput(); g.projectiles.clear();
     rigProbe(g, check);
 
@@ -1066,12 +1014,16 @@ const PROBE = `
     g.ui.update(1/60);
     // and the row wraps, or the last button is a dead end on a pad
     let navWrapped = false;
-    for (let i = 0; i < 8 && !navWrapped; i++) {
+    // The menu now spans several rows and columns. Right must wrap left at
+    // an edge; it need not return to the deployment button on another row.
+    for (let i = 0; i < g.ui.items().length * 2 && !navWrapped; i++) {
+      const beforeRect = g.ui.focus.getBoundingClientRect();
       input.keys.KeyD = true; g.ui.update(1/60);
       input.keys.KeyD = false; g.ui.update(1/60);
-      navWrapped = g.ui.focus === navMenuFirst;
+      const afterRect = g.ui.focus.getBoundingClientRect();
+      navWrapped = afterRect.left + afterRect.width / 2 < beforeRect.left + beforeRect.width / 2;
     }
-    check(navWrapped, 'UINAV', 'the menu row never wrapped back to the first button');
+    check(navWrapped, 'UINAV', 'the menu focus never wrapped left from the right edge');
     navHideAll();
 
     // the left stick steers a menu as well as the marine
@@ -1463,12 +1415,23 @@ const PROBE = `
       check(shotImg.getAttribute('src') === A.weaponPortraits.cache.railgun,
         'SHOP', 'the card showed a portrait of the wrong weapon');
     }
-    // an upgrade card is not a weapon and keeps its glyph
-    g.shopStock[0] = { kind: 'upgrade', id: g.shopStock[1] && g.shopStock[1].kind === 'upgrade' ? g.shopStock[1].id : 'damage',
+    // Training upgrades retain their glyph; physical consumables use models.
+    g.shopStock[0] = { kind: 'upgrade', id: 'damage',
       price: 100, locked: false, sold: false };
     g.hud.renderUpgrades();
     check(document.querySelectorAll('#upgradeGrid .upgradeIcon').length > 0,
       'SHOP', 'an upgrade card lost its icon');
+    g.shopStock[0] = { kind: 'upgrade', id: 'supply', price: 100, locked: true, sold: false };
+    g.shopStock[1] = { kind: 'upgrade', id: 'medkit', price: 80, locked: false, sold: false };
+    g.hud.renderUpgrades();
+    const supplyImages = document.querySelectorAll('#upgradeGrid .supplyShot img');
+    check(supplyImages.length === 2, 'SHOP', 'ammunition and medkit need model portraits');
+    check(supplyImages[0].src === A.weaponPortraits.getItem('ammo', 'supply'), 'SHOP', 'wrong ammunition model');
+    check(supplyImages[1].src === A.weaponPortraits.getItem('bigHealth'), 'SHOP', 'wrong medical model');
+    check(supplyImages[0].src !== supplyImages[1].src, 'SHOP', 'consumable portraits must differ');
+    const supplyPin = document.querySelector('#upgradeGrid .pin');
+    check(supplyPin.getAttribute('aria-pressed') === 'true', 'SHOP', 'pin state not exposed');
+    check(getComputedStyle(supplyPin).width === '30px', 'SHOP', 'pin stretches across its card');
     g.money = shotMoney;
 
     /* Elite ranks in the real game: they have to survive a render, a rank
@@ -1840,12 +1803,12 @@ const PROBE = `
     check(Object.keys(g.perks).length === 0 && g.perkOffer.length === 0 && !perkScreen.classList.contains('show'),
       'RESET', 'new run retained the old build');
     check(neutral(), 'RESET', 'new run retained perk stats');
-    check(p.ownedList().length === 2 && p.owned.pistol && p.owned.smg && !p.owned.plasma && p.ammo.cell === 0,
+    check(p.ownedList().length === 3 && p.owned.knife && p.owned.pistol && p.owned.smg && !p.owned.plasma && p.ammo.cell === 0,
       'RESET', 'new run retained the previous arsenal');
     check(p.grenadeCd === 0 && !p.grenade && !p.grenadeMesh.visible && g.money === 180,
       'RESET', 'new run retained grenade or credit state');
     check(p.callsign === 'Асет-07' && A.loadLook().nickname === 'Асет-07', 'NICK', 'restart discarded the saved callsign');
-    return checks + ' assertions; sectors=6; navLayouts=24; weapons=10; bosses=3; rigPoses=80; pixels/TWEEN/nickname/G/RMB/rail/cannon/shop/reroll/pins/arsenal/elites/perks/station/finale/pad/rebind/reset/uinav/osk/overmind/hazards/dmgnum/portraits';
+    return checks + ' assertions; sectors=6; navLayouts=24; weapons=25; bosses=3; rigPoses=80; smooth/TWEEN/nickname/G/RMB/rail/cannon/shop/reroll/pins/arsenal/elites/perks/station/finale/pad/rebind/reset/uinav/osk/overmind/hazards/dmgnum/portraits';
   }
 
   function sfxProbe(g){

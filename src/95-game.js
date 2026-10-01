@@ -29,6 +29,10 @@ class Game {
   constructor(canvas) {
     this.canvas = canvas;
     this.state = ST_MENU;
+    this.modeId = 'campaign';
+    this.modeOptions = {};
+    this.arena = null;
+    this.campaign = null;
     this.time = 0;
     this.tick = 0;
     this.runSeed = freshRunSeed();
@@ -65,7 +69,6 @@ class Game {
     this.motionScale = Number(store.get('motion', '1'));
 
     this._setupRenderer();
-    this.pixelFX = new PixelRenderer(this.renderer, Number(store.get('pixels', '2')));
     this.presentation = new TWEEN.Group();
     this.presentationTime = 0;
     this._setupScene();
@@ -101,7 +104,7 @@ class Game {
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.32;
+    r.toneMappingExposure = 1.24;
     this.renderer = r;
     this.pixelRatioScale = 1;
   }
@@ -116,11 +119,12 @@ class Game {
     this.aimCamera = this.camera.clone();
     this.camOffset = new THREE.Vector3(0, 26, 11);
 
-    scene.add(new THREE.HemisphereLight(0x8db6cf, 0x192530, 2.1));
-    scene.add(new THREE.AmbientLight(0x9bafbd, 0.9));
+    this.skyLight = new THREE.HemisphereLight(0xa3cce2, 0x1b2530, 1.85);
+    this.fillLight = new THREE.AmbientLight(0x9bafbd, 0.62);
+    scene.add(this.skyLight, this.fillLight);
 
     // key light follows the player so the shadow map stays tight
-    const key = new THREE.DirectionalLight(0xc9e2f5, 2.1);
+    const key = new THREE.DirectionalLight(0xf5e7cf, 2.8);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 1;
@@ -135,6 +139,11 @@ class Game {
     scene.add(key);
     scene.add(key.target);
     this.keyLight = key;
+    // A restrained cold rim separates dark jackets from walls, without
+    // adding another shadow map or changing authored operator colours.
+    this.rimLight = new THREE.DirectionalLight(0x86c8ed, 0.85);
+    this.rimLight.position.set(-18, 12, -14);
+    scene.add(this.rimLight, this.rimLight.target);
 
     // pooled lamp lights, re-homed to whichever fixtures are nearest.
     // Intensity is in candela (three r155+ physical units), so room lighting
@@ -159,8 +168,14 @@ class Game {
       this.levelView.dispose();
       this.props.dispose();
     }
-    this.level = new LevelMap(48, 48, seed, this.sectorIndex);
+    this.level = this.modeId !== 'campaign'
+      ? createArenaLevel(seed, this.modeId) : this.modeOptions.legacyWaves
+        ? new LevelMap(48, 48, seed, this.sectorIndex) : createCampaignLevel(seed, this.modeOptions.missionId || 1);
     this.levelView = new LevelView(this.scene, this.level);
+    const lab = this.level.sectorIndex === 1, reactor = this.level.sectorIndex === 2;
+    this.skyLight.color.set(lab ? 0xbac9ed : reactor ? 0xa7bbd5 : 0xa3cce2);
+    this.keyLight.color.set(lab ? 0xe4edff : reactor ? 0xffd6a3 : 0xf5e7cf);
+    this.rimLight.color.set(lab ? 0xc0a8ff : reactor ? 0x89bde5 : 0x86c8ed);
 
     if (!this.fx) {
       this.fx = {
@@ -198,8 +213,8 @@ class Game {
     if (!this.player) this.player = new Player(this);
     else this.player.reset();
 
-    this.level.rebuildNav(this.player.x, this.player.z);
-    this.hud.buildMinimap(this.level);
+    if (this.modeId === 'campaign') this.level.rebuildNav(this.player.x, this.player.z);
+    if (this.modeId === 'campaign') this.hud.buildMinimap(this.level);
 
     // frame the marine straight away so the menu has the facility as a
     // backdrop instead of whatever happens to sit at the world origin
@@ -208,7 +223,12 @@ class Game {
     this.updateCamera(1);
   }
 
-  startRun(seed = freshRunSeed()) {
+  startRun(seed = freshRunSeed(), modeId = this.modeId || 'campaign', options = {}) {
+    if (this.campaign) { this.campaign.dispose(); this.campaign = null; }
+    this.hud.resetTransient();
+    this.leaveArena();
+    this.modeId = normalizeModeId(modeId);
+    this.modeOptions = Object.assign({}, options);
     sfx.flameStop();
     sfx.spinup(false, 0);
     this.sectorIndex = 0;
@@ -216,7 +236,7 @@ class Game {
     this.runSeed = Number(seed) >>> 0;
     this.rng = makeRng(this.runSeed);
     this.tick = 0;
-    this.newLevel(sectorSeed(this.runSeed, 0));
+    this.newLevel(this.modeId === 'campaign' && options.legacyWaves ? sectorSeed(this.runSeed, 0) : this.runSeed);
     this.player.reset();
     this.time = 0;
     this.wave = 0;
@@ -248,23 +268,49 @@ class Game {
     this.player.giveWeapon('smg');
     this.player.callsign = loadLook().nickname;
     this.hud.setCallsign(this.player.callsign);
-    this.player.addArmor(40);
-    this.applyStationUpgrades();
-    this.input.clear();
-    for (const id of ['start', 'pause', 'gameover', 'upgradeScreen', 'perkScreen', 'victory', 'stationScreen']) {
-      document.getElementById(id).classList.remove('show');
+    if (this.modeId === 'campaign') {
+      this.player.addArmor(40);
+      this.applyStationUpgrades();
+    } else {
+      this.metaRanks = {};
+      this.money = 0;
+      this.waveState = 'arena';
+      this._campaignEnemies = this.enemies;
+      this.arena = new ArenaMatch(this, this.modeId, options);
+      this.enemies = this.arena.enemies;
     }
-    this.hud.showBanner('ОПЕРАЦИЯ: ЗАТМЕНИЕ', 'Сектор 01 • зачистите три волны', 3);
+    this.input.clear();
+    for (const id of ['start', 'pause', 'gameover', 'upgradeScreen', 'perkScreen', 'victory', 'stationScreen', 'arenaResults', 'missionSelectScreen', 'campaignComplete', 'campaignFailed']) {
+      const screen = document.getElementById(id);
+      if (screen) screen.classList.remove('show');
+    }
+    if (this.arena) this.hud.showBanner(this.arena.def.label, this.arena.def.rules, 3);
+    else if (!options.legacyWaves) {
+      this.campaign = new CampaignDirector(this, { missionId: options.missionId || 1, resume: !!options.resume });
+      this.campaign.begin();
+    } else this.hud.showBanner('ОПЕРАЦИЯ: ЗАТМЕНИЕ', 'Сектор 01 • зачистите три волны', 3);
     document.body.classList.add('playing');
     this.hud.update(0, this);
     this.revealSector();
   }
 
+  leaveArena() {
+    this.cameraSubject = null;
+    if (!this.arena) return;
+    this.arena.dispose();
+    this.arena = null;
+    if (this._campaignEnemies) this.enemies = this._campaignEnemies;
+    this._campaignEnemies = null;
+    const screen = document.getElementById('arenaResults');
+    if (screen) screen.classList.remove('show');
+  }
+
   revealSector() {
     this.presentation.removeAll();
-    const reveal = this.pixelFX.uniforms.reveal;
-    reveal.value = this.motionScale ? 0.25 : 1;
-    new TWEEN.Tween(reveal, this.presentation).to({ value: 1 }, 700)
+    const fade = { value: this.motionScale ? .35 : 1 };
+    this.canvas.style.opacity = String(fade.value);
+    new TWEEN.Tween(fade, this.presentation).to({ value: 1 }, 550)
+      .onUpdate(() => { this.canvas.style.opacity = String(fade.value); })
       .easing(TWEEN.Easing.Cubic.Out).start(this.presentationTime);
   }
 
@@ -339,6 +385,7 @@ class Game {
      again. Paying out the difference keeps a victorious run from being
      counted — or paid — twice. */
   bankRun() {
+    if (this.arena || this.modeId && this.modeId !== 'campaign') return 0;
     const total = this.earnedSamples();
     const earned = Math.max(0, total - this.bankedSamples);
     this.bankedSamples = total;
@@ -360,6 +407,7 @@ class Game {
   }
 
   runProgressText() {
+    if (this.arena) return this.arena.def.label;
     if (this.endless) return 'БЕЗ ПРЕДЕЛА · ВОЛНА ' + this.wave;
     return 'ВОЛНА ' + Math.min(this.wave, RUN_FINAL_WAVE) + ' / ' + RUN_FINAL_WAVE;
   }
@@ -440,6 +488,7 @@ class Game {
     // the break is doctrine then supply; opening the shop here is what makes
     // the credits earned this wave feel like they belong to this wave
     this.openUpgrades();
+    if (this.campaign?.isCheckpointSafe()) this.campaign.saveCheckpoint();
     return true;
   }
 
@@ -450,6 +499,7 @@ class Game {
   }
 
   openUpgrades() {
+    if (this.arena) return false;
     if (this.state !== ST_PLAY || this.waveState !== 'prep') return false;
     // reopening the same shop between waves must not reroll it for free
     if (!this.shopStock.length) { this.shopRerolls = 0; this.rollShop([]); }
@@ -469,6 +519,7 @@ class Game {
     this.input.endFrame();
     document.getElementById('upgradeScreen').classList.remove('show');
     document.body.classList.add('playing');
+    if (this.campaign?.isCheckpointSafe()) this.campaign.saveCheckpoint();
   }
 
   /* Stock is rolled once per visit and then stands: rerolling is the only
@@ -521,7 +572,7 @@ class Game {
     if (slot.kind === 'weapon') {
       if (this.player.owned[slot.id]) return false;
       // the harness is full: the player has to give something up first
-      if (this.player.arsenalFull()) return false;
+      if (WEAPON_BY_ID[slot.id].slot !== 'melee' && this.player.arsenalFull()) return false;
       this.money -= slot.price;
       this.player.giveWeapon(slot.id);
       const ammo = WEAPON_BY_ID[slot.id].ammo;
@@ -534,6 +585,7 @@ class Game {
     }
     slot.sold = true;
     slot.locked = false;
+    if (this.campaign?.isCheckpointSafe()) this.campaign.saveCheckpoint();
     sfx.pickup('weapon');
     this.hud.renderUpgrades();
     this.hud.update(0, this);
@@ -551,6 +603,7 @@ class Game {
     const refund = Math.floor(w.price * WEAPON_SELL_RATIO);
     if (!this.player.dropWeapon(id)) return false;
     this.money += refund;
+    if (this.campaign?.isCheckpointSafe()) this.campaign.saveCheckpoint();
     this.hud.buildWeaponRack(this.player);
     this.hud.popup(w.name + ' СДАН · +' + refund + ' КР.', '#8fd8ff');
     sfx.ui('tick');
@@ -600,7 +653,6 @@ class Game {
     this.camera.updateProjectionMatrix();
     this.aimCamera.aspect = w / h;
     this.aimCamera.updateProjectionMatrix();
-    this.pixelFX.resize(w, h);
   }
 
   /* dirX/dirZ point where the camera should be kicked. The strongest pending
@@ -855,6 +907,8 @@ class Game {
   }
 
   onEnemyKilled(e) {
+    if (this.arena) return;
+    if (this.campaign) this.campaign.onEnemyKilled(e);
     this.stats.kills++;
     this.stats.waveKills++;
     // worth about one sample per common alien, dozens for a boss
@@ -888,6 +942,8 @@ class Game {
   }
 
   onPlayerDeath() {
+    if (this.arena) { this.arena.onPlayerDeath(); return; }
+    if (this.campaign) { this.campaign.onPlayerDeath(); return; }
     this.state = ST_DEAD;
     document.getElementById('victory').classList.remove('show');
     document.body.classList.remove('playing');
@@ -914,7 +970,7 @@ class Game {
   spawnRocket(x, y, z, angle, w) { this.projectiles.spawnRocket(x, y, z, angle, w); }
   spawnAcid(e, tx, tz) { this.projectiles.spawnAcid(e, tx, tz); }
 
-  explosion(x, y, z, damage, radius, hurtsPlayer) {
+  explosion(x, y, z, damage, radius, hurtsPlayer, ownerId = 'environment') {
     const fx = this.fx;
     sfx.explode(clamp(radius / 6, 0.6, 1.6));
     this.shake(clamp(radius * 1.3, 3, 11), 0.4);
@@ -937,6 +993,7 @@ class Game {
     let hitCount = 0;
     for (let i = 0; i < hits.length; i++) {
       const e = hits[i];
+      e.lastDamageOwnerId = ownerId;
       const dx = e.x - x, dz = e.z - z;
       const d = Math.hypot(dx, dz) || 0.001;
       if (!this.level.lineOfSight(x, z, e.x, e.z)) continue;
@@ -1009,7 +1066,7 @@ class Game {
   }
 
   updateCamera(dt) {
-    const p = this.player;
+    const p = this.cameraSubject || this.player;
     // bias the framing toward where the player is aiming
     let lx = this.aim.x - p.x, lz = this.aim.z - p.z;
     const llen = Math.hypot(lx, lz);
@@ -1049,6 +1106,9 @@ class Game {
 
     this.camera.position.copy(this._camPos);
     this.camera.lookAt(this._camSmooth.x, 0.8, this._camSmooth.z);
+    // HUD projection runs before render; refresh the view after moving the
+    // camera so nameplates and directional cues do not trail by one frame.
+    this.camera.updateMatrixWorld();
 
     // keep the shadow frustum centred on the action
     this.keyLight.position.set(p.x + 18, 34, p.z + 14);
@@ -1113,6 +1173,11 @@ class Game {
       this.hud.popup(sfx.musicOn ? 'МУЗЫКА ВКЛЮЧЕНА' : 'МУЗЫКА ВЫКЛЮЧЕНА', '#8fd8ff');
     }
 
+    if (this.arena && (this.state === ST_PLAY || (this.arena.online && this.state === ST_PAUSE))) {
+      this.arena.frame(dt);
+      input.endFrame();
+      return;
+    }
     if (this.state !== ST_PLAY) {
       // Enter belongs to the focused button; R stays a bare shortcut
       if (this.state === ST_DEAD && input.once('KeyR')) {
@@ -1141,7 +1206,7 @@ class Game {
     /* Impact freeze. The tick is still spent, so the wave director, the clock
        and the replay stay aligned; only the world stops moving. Camera and
        particles keep running or the freeze reads as a dropped frame. */
-    if (this.hitStop.consume()) {
+    if (!this.arena && this.hitStop.consume()) {
       this.updateCamera(dt);
       this.fx.lights.update(dt);
       this.fx.sparks.update(dt, this.camera.quaternion);
@@ -1155,12 +1220,14 @@ class Game {
     this.tick++;
     this.updateEvents();
     if (this.state !== ST_PLAY) { input.endFrame(); return; }
-    if (input.actionOnce('nextWave') && this.waveState === 'prep') this.prepTimer = 0;
+    if (this.arena) this.arena.advance(dt);
+    if (this.campaign && input.actionOnce('interact')) this.campaign.interact();
+    if (!this.campaign && input.actionOnce('nextWave') && this.waveState === 'prep') this.prepTimer = 0;
     this.comboTimer = Math.max(0, this.comboTimer - dt);
     if (this.comboTimer === 0) this.combo = 0;
     this.updateAim();
 
-    this.player.update(dt, input, this.aim.x, this.aim.z);
+    if (!this.arena || this.arena.phase === 'active') this.player.update(dt, input, this.aim.x, this.aim.z);
     this.props.resolve(this.player, PLAYER_RADIUS);
     if (this.player.alive) this.player.updateModel(0, Math.hypot(this.player.vx, this.player.vz));
     if (this.state !== ST_PLAY) { input.endFrame(); return; }
@@ -1184,7 +1251,8 @@ class Game {
     this.damageNumbers.update(dt);
     if (this.state !== ST_PLAY) { input.endFrame(); return; }
     this.pickups.update(dt, this.player, this.time);
-    this.updateWaves(dt);
+    if (this.campaign) this.campaign.update(dt);
+    else this.updateWaves(dt);
 
     const camQuat = this.camera.quaternion;
     this.fx.sparks.update(dt, camQuat);
@@ -1195,11 +1263,6 @@ class Game {
     });
     this.fx.lights.update(dt);
     this.fx.shockwaves.update(dt);
-
-    this.fx.blobs.begin();
-    this.fx.blobs.add(this.player.x, this.player.z, 1.5);
-    this.enemies.render(this.fx.blobs);
-    this.fx.blobs.end();
 
     this.updateCamera(dt);
     this.levelView.updateLamps(this.lampLights, this.player.x, this.player.z, this.time);
@@ -1229,6 +1292,8 @@ class Game {
     const previous = this._previousVisual;
     previous.player.copy(p.root.position); previous.rotation.copy(p.root.quaternion);
     previous.camera.copy(this.camera.position); previous.cameraRotation.copy(this.camera.quaternion);
+    previous.meleeId = p.meleeAttack?.id;
+    previous.meleeAge = p.meleeAttack?.age || 0;
   }
 
   render(alpha = 1) {
@@ -1240,12 +1305,24 @@ class Game {
     const position = p.root.position.clone(), rotation = p.root.quaternion.clone();
     const playerEuler = p.root.rotation.clone(), silhouetteEuler = p.silhouette.rotation.clone();
     const silhouettePosition = p.silhouette.position.clone();
+    const readout = p.selfReadout;
+    const readoutX = readout ? readout.position.x : 0, readoutZ = readout ? readout.position.z : 0;
+    if (readout) readout.visible = p.alive && p.root.visible && this.state !== ST_MENU;
     const cameraPosition = this.camera.position.clone(), cameraRotation = this.camera.quaternion.clone();
+    const interpolateMelee = !this.arena && p.meleeAttack && alpha < 1;
+    const attackProgress = p._weaponPoseState.attackProgress;
+    if (interpolateMelee) {
+      const attack = p.meleeAttack;
+      const from = previous.meleeId === attack.id ? previous.meleeAge : 0;
+      p._weaponPoseState.attackProgress = lerp(from, attack.age, alpha) / attack.total;
+      posePlayerWeapon(p.model, p.weapon, p.weaponMesh, p._weaponPoseState);
+    }
     if (alpha < 1) {
       p.root.position.lerpVectors(previous.player, position, alpha);
       p.root.quaternion.slerpQuaternions(previous.rotation, rotation, alpha);
       p.silhouette.position.copy(p.root.position);
       p.silhouette.quaternion.copy(p.root.quaternion);
+      if (readout) { readout.position.x = p.root.position.x; readout.position.z = p.root.position.z; }
       this.camera.position.lerpVectors(previous.camera, cameraPosition, alpha);
       this.camera.quaternion.slerpQuaternions(previous.cameraRotation, cameraRotation, alpha);
     }
@@ -1256,10 +1333,15 @@ class Game {
     this.projectiles.render(alpha);
     this.hazards.render();
     this.damageNumbers.render(this.camera, this._dmgPoint, window.innerWidth, window.innerHeight);
-    try { this.pixelFX.render(this.scene, this.camera); }
+    try { this.renderer.render(this.scene, this.camera); }
     finally {
+      if (interpolateMelee) {
+        p._weaponPoseState.attackProgress = attackProgress;
+        posePlayerWeapon(p.model, p.weapon, p.weaponMesh, p._weaponPoseState);
+      }
       p.root.position.copy(position); p.root.rotation.copy(playerEuler);
       p.silhouette.position.copy(silhouettePosition); p.silhouette.rotation.copy(silhouetteEuler);
+      if (readout) { readout.position.x = readoutX; readout.position.z = readoutZ; }
       p.root.updateMatrixWorld(true);
       this.camera.position.copy(cameraPosition); this.camera.quaternion.copy(cameraRotation);
       this.camera.updateMatrixWorld();

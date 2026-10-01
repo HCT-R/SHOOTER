@@ -137,7 +137,7 @@ class Customizer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
-    this.pixelFX = new PixelRenderer(this.renderer, 2);
+
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 20);
@@ -592,7 +592,7 @@ class Customizer {
     const cv = this.renderer.domElement;
     const w = cv.clientWidth || 320, h = cv.clientHeight || 420;
     this.renderer.setSize(w, h, false);
-    this.pixelFX.resize(w, h);
+
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this._positionCamera();
@@ -623,6 +623,6 @@ class Customizer {
         { phase: t, bob: bob, movement: 0, spin: 0, dt: dt });
     }
     this._positionCamera();
-    this.pixelFX.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.camera);
   }
 }

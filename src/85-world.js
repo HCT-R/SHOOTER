@@ -14,7 +14,7 @@ function disposeLevelGroup(group) {
     }
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (let i = 0; i < mats.length; i++) {
-      if (mats[i] && !materials.has(mats[i])) { materials.add(mats[i]); mats[i].dispose(); }
+      if (mats[i] && !mats[i].userData.shared && !materials.has(mats[i])) { materials.add(mats[i]); mats[i].dispose(); }
     }
     if (o.dispose) o.dispose();
   });
@@ -49,13 +49,13 @@ class LevelView {
     // the shared texture is used directly; map size never varies between runs,
     // so a per-level clone would only be extra GPU memory to track and free
     const tex = TEX.sectorFloor[L.sectorIndex];
-    tex.repeat.set((L.w / 2) * PAD, (L.h / 2) * PAD);
+    tex.repeat.set((L.w / 8) * PAD, (L.h / 8) * PAD);
     TEX.floorNormal.repeat.copy(tex.repeat);
 
     const geo = new THREE.PlaneGeometry(w, h);
     const mat = new THREE.MeshStandardMaterial({
-      map: tex, normalMap: TEX.floorNormal, normalScale: new THREE.Vector2(0.32, 0.32),
-      roughness: L.sectorIndex === 1 ? 0.58 : 0.78, metalness: 0.32, color: L.sector.floorTint
+      map: tex, normalMap: TEX.floorNormal, normalScale: new THREE.Vector2(0.15, 0.15),
+      roughness: L.sectorIndex === 1 ? 0.79 : 0.9, metalness: 0.13, color: L.sector.floorTint
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI / 2;
@@ -138,6 +138,23 @@ class LevelView {
     trim.receiveShadow = true;
     this.group.add(trim);
     this._buildWallDetails(faces);
+    this._buildContactShadows(faces);
+  }
+
+  // Fixed contact shade survives the low preset's disabled shadow map.
+  // Three instanced bands hug actual collision faces, never open routes.
+  _buildContactShadows(faces) {
+    for (const [width, opacity] of [[0.9, 0.07], [0.42, 0.10], [0.14, 0.18]]) {
+      const strips = faces.map(f => ({
+        x: this.level.tileToWorldX(f.tx) + f.nx * (TILE / 2 + width / 2),
+        y: 0.078 + (0.9 - width) * 0.002,
+        z: this.level.tileToWorldZ(f.tz) + f.nz * (TILE / 2 + width / 2),
+        w: f.nx ? width : TILE, h: f.nx ? TILE : width, d: 1, rx: -Math.PI / 2
+      }));
+      this._instances(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+        color: 0x050b12, transparent: true, opacity, depthWrite: false, toneMapped: false
+      }), strips);
+    }
   }
 
   /* Unit geometry plus matrices keeps the extra trim to a few draw calls. */
@@ -199,6 +216,8 @@ class LevelView {
     const L = this.level, markings = [], lanes = [], pools = [], pads = [];
     const R = makeRng(L.seed ^ 0x41703);
     this.haze = [];
+    // ArenaArt owns the map's districts, spawn pads and navigation graphics.
+    if (L.arenaLayout) return;
     for (const room of L.rooms) {
       const x = L.tileToWorldX(room.cx), z = L.tileToWorldZ(room.cz);
       const size = Math.min(10.5, Math.min(room.w, room.h) * TILE * 0.61);
@@ -456,16 +475,8 @@ class Props {
     let nearest = null, nearestDist = Infinity;
     for (const solid of this.solids) {
       if (solid.barrel && !solid.barrel.alive) continue;
-      const ox = ax - solid.x, oz = az - solid.z;
-      const c = ox * ox + oz * oz - solid.r * solid.r;
-      let distance = 0;
-      if (c > 0) {
-        const along = ox * dx + oz * dz;
-        const discriminant = along * along - c;
-        if (discriminant < 0) continue;
-        distance = -along - Math.sqrt(discriminant);
-        if (distance < 0) continue;
-      }
+      const distance = CombatCore.rayCircleHit({ x: ax, z: az }, dx, dz, maxD, solid, solid.r);
+      if (distance === null) continue;
       if (distance > maxD || distance >= nearestDist) continue;
       nearestDist = distance;
       nearest = solid;
@@ -524,7 +535,7 @@ class Props {
 /* --------------------------------------------------------- pickups */
 const PICKUP_KINDS = {
   health:    { geo: 'health', color: 0xff5a5a, sound: 'health', label: '+25 HP' },
-  bigHealth: { geo: 'health', color: 0xff2a2a, sound: 'health', label: '+60 HP', scale: 1.4 },
+  bigHealth: { geo: 'bigHealth', color: 0xff2a2a, sound: 'health', label: '+60 HP' },
   armor:     { geo: 'armor',  color: 0x4aa8ff, sound: 'armor',  label: '+40 ARMOR' },
   money:     { geo: 'money',  color: 0x38e0d0, sound: 'money',  label: '' },
   ammo:      { geo: 'ammo',   color: 0xd8c84a, sound: 'ammo',   label: 'AMMO' },
@@ -554,7 +565,8 @@ class Pickups {
   spawn(kind, x, z, payload) {
     const def = PICKUP_KINDS[kind];
     if (!def) return;
-    const mesh = new THREE.Mesh(PICKUP_GEO[def.geo], this.mat);
+    const detailed = kind === 'ammo' || kind === 'health' || kind === 'bigHealth';
+    const mesh = detailed ? createPickupModel(def.geo, payload) : new THREE.Mesh(PICKUP_GEO[def.geo], this.mat);
     const sc = def.scale || 1;
     mesh.scale.setScalar(sc);
     mesh.castShadow = true;
@@ -584,8 +596,8 @@ class Pickups {
         continue;
       }
       it.phase += dt * 2.2;
-      it.mesh.rotation.y += dt * 1.7;
-      it.holder.position.y = 0.55 + Math.sin(it.phase) * 0.12;
+      it.mesh.rotation.y += dt * 0.45;
+      it.holder.position.y = 0.55 + Math.sin(it.phase) * 0.045;
 
       if (!player.alive) continue;
       const d2v = dist2(it.x, it.z, player.x, player.z);
@@ -687,6 +699,16 @@ class Projectiles {
     this.rocketMesh.frustumCulled = false;
     this.rocketMesh.count = 0;
     scene.add(this.rocketMesh);
+    this.grenadeGeo = new THREE.SphereGeometry(0.16, 16, 10);
+    this.grenadeMat = new THREE.MeshStandardMaterial({ color: 0x9da880, roughness: 0.5, metalness: 0.55 });
+    this.grenadeMesh = new THREE.InstancedMesh(this.grenadeGeo, this.grenadeMat, 32);
+    this.boltGeo = mergeParts([
+      part(G.cyl, { rot: [Math.PI / 2, 0, 0], scale: [0.014, 0.65, 0.014], color: 0xb6c5c5 }),
+      part(G.cone, { pos: [0, 0, 0.39], rot: [Math.PI / 2, 0, 0], scale: [0.04, 0.15, 0.04], color: 0xe6edf0 }),
+      part(G.box, { pos: [0, 0, -0.24], scale: [0.14, 0.02, 0.13], color: 0x729d96 })
+    ]);
+    this.boltMesh = new THREE.InstancedMesh(this.boltGeo, this.rocketMat, 32);
+    for (const mesh of [this.grenadeMesh, this.boltMesh]) { mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh); }
 
     this.acidGeo = new THREE.IcosahedronGeometry(0.22, 0);
     this.acidMat = new THREE.MeshBasicMaterial({ color: 0xaaff33, toneMapped: false });
@@ -705,11 +727,16 @@ class Projectiles {
 
   spawnRocket(x, y, z, angle, w) {
     if (this.rockets.length >= 32) return;
+    this.owners ||= new Map();
+    const ownerId = w.ownerId || this.game.player.id || 'campaign-player';
+    this.owners.set(ownerId, w.owner || this.game.player);
     this.rockets.push({
       x: x, y: y, z: z, angle: angle,
       prevX: x, prevY: y, prevZ: z,
       vx: Math.sin(angle) * w.projSpeed, vz: Math.cos(angle) * w.projSpeed,
-      speed: w.projSpeed, life: 4, w: w, smokeT: 0
+      speed: w.projSpeed, vy: w.projectileKind === 'grenade' ? 4.8 : 0, gravity: w.projectileKind === 'grenade' ? w.projGravity || 14 : 0,
+      ownerId,
+      life: w.fuse || (w.projectileKind === 'bolt' ? w.range / w.projSpeed : 4), w: w, smokeT: 0, bounces: 0
     });
   }
 
@@ -724,7 +751,7 @@ class Projectiles {
     this.acid.push({
       x: x, y: y, z: z, prevX: x, prevY: y, prevZ: z,
       vx: (dx / len) * d.projSpeed, vz: (dz / len) * d.projSpeed,
-      vy: 1.6, life: 3.2, damage: e.damage === undefined ? d.damage : e.damage
+      vy: 1.6, gravity: 5, ownerId: e.id, life: 3.2, damage: e.damage === undefined ? d.damage : e.damage
     });
   }
 
@@ -736,6 +763,11 @@ class Projectiles {
       const r = this.rockets[i];
       r.prevX = r.x; r.prevY = r.y; r.prevZ = r.z;
       r.life -= dt;
+      const grenade = r.w.projectileKind === 'grenade', bolt = r.w.projectileKind === 'bolt';
+      if (grenade) {
+        const motion = CombatCore.projectileKinematics(r, dt); r.vy = motion.vy; r.y = motion.y;
+        if (r.y < 0.18) { r.y = 0.18; r.vy = Math.abs(r.vy) * (r.w.bounce || 0.45); r.vx *= 0.78; r.vz *= 0.78; }
+      }
       const stepX = r.vx * dt, stepZ = r.vz * dt;
       const nx = r.x + stepX, nz = r.z + stepZ;
 
@@ -747,7 +779,7 @@ class Projectiles {
       const prop = g.props.raycast(r.x, r.z, stepX / distance, stepZ / distance, distance);
       let propHit = null, enemyHit = null, directHit = false;
       if (prop && prop.dist < stop) { stop = prop.dist; propHit = prop; }
-      if (hit && hit.t * distance < stop) {
+      if (hit && hit.t * distance < stop && (!grenade || r.y < (hit.enemy.y || 0) + hit.enemy.def.radius * 2 + 0.45)) {
         stop = hit.t * distance; enemyHit = hit.enemy; propHit = null;
       }
       if (stop !== Infinity) {
@@ -757,7 +789,7 @@ class Projectiles {
         if (enemyHit) {
           // direct impact goes through the player funnel; the splash that
           // follows is handled by explosion() and never crits
-          const killed = g.player.dealDamage(enemyHit, r.w.damage || 0,
+          const killed = this.owners.get(r.ownerId).dealDamage(enemyHit, r.w.damage || 0,
             stepX / distance, stepZ / distance, r.w.knock || 0, 0, r.w);
           g.onHitConfirm(killed);
           directHit = true;
@@ -766,12 +798,20 @@ class Projectiles {
         }
       } else if (r.life <= 0) { boom = true; }
 
-      r.x = boom ? bx : nx; r.z = boom ? bz : nz;
+      if (grenade && boom && !enemyHit && r.life > 0 && r.bounces < 4) {
+        r.bounces++;
+        const factor = r.w.bounce || 0.45;
+        if (Math.abs(stepX) > Math.abs(stepZ)) r.vx *= -factor;
+        else r.vz *= -factor;
+        r.angle = Math.atan2(r.vx, r.vz);
+        r.x = bx; r.z = bz; boom = false;
+      } else { r.x = boom ? bx : nx; r.z = boom ? bz : nz; }
+      if (r.life <= 0) { boom = true; bx = r.x; bz = r.z; }
 
       const shell = r.w.projectileKind === 'shell';
       // Cannon shells leave bright streaks; rockets retain smoky exhaust.
       r.smokeT -= dt;
-      if (r.smokeT <= 0) {
+      if (r.smokeT <= 0 && !grenade && !bolt) {
         r.smokeT = shell ? 0.035 : 0.012;
         if (!shell) g.fx.smoke.emit(r.x, r.y, r.z, (Math.random() - 0.5) * 1.2, 0.7, (Math.random() - 0.5) * 1.2,
           0.85, 0.42, 3.2, 0x555055, 0.44);
@@ -780,10 +820,12 @@ class Projectiles {
           0.14, 0.6, 0xffb44a, 0);
         if (shell) g.fx.tracers.add(r.x, r.y, r.z, r.x - stepX * 2, r.z - stepZ * 2, 0.2, 0xffcf70, 0.08);
       }
-      g.fx.lights.flash(r.x, r.y, r.z, 0xff9040, 40, 10, 0.05);
+      if (!grenade && !bolt) g.fx.lights.flash(r.x, r.y, r.z, 0xff9040, 40, 10, 0.05);
+      if (bolt && g.fx.tracers) g.fx.tracers.add(r.x, r.y, r.z, r.prevX, r.prevZ, 0.035, 0xbeddd8, 0.055);
 
       if (boom) {
-        const hits = g.explosion(bx, r.y, bz, r.w.splash, r.w.splashRadius, true);
+        const hits = r.w.splash > 0 && r.w.splashRadius > 0 ? g.explosion(bx, r.y, bz, r.w.splash, r.w.splashRadius, true, r.ownerId) : 0;
+        if (bolt && directHit && g.fx.sparks.impact) g.fx.sparks.impact(bx, r.y, bz, Math.sin(r.angle), Math.cos(r.angle), 0xc9e4df, false);
         if ((directHit || hits > 0) && r.w.onHit) r.w.onHit();
         this.rockets.splice(i, 1);
       }
@@ -794,10 +836,7 @@ class Projectiles {
       const a = this.acid[i];
       a.prevX = a.x; a.prevY = a.y; a.prevZ = a.z;
       a.life -= dt;
-      a.vy -= 5 * dt;
-      a.x += a.vx * dt;
-      a.y += a.vy * dt;
-      a.z += a.vz * dt;
+      Object.assign(a, CombatCore.projectileKinematics(a, dt));
 
       let done = false;
       if (a.life <= 0 || a.y < 0.15) done = true;
@@ -819,23 +858,26 @@ class Projectiles {
       }
     }
 
-    this.render();
   }
 
   render(alpha = 1) {
     alpha = clamp(alpha, 0, 1);
-    let n = 0;
+    let n = 0, grenadeCount = 0, boltCount = 0;
     for (let i = 0; i < this.rockets.length; i++) {
       const r = this.rockets[i];
-      this._e.set(0, r.angle, 0);
+      this._e.set(r.w.projectileKind === 'grenade' ? r.life * 7 : 0, r.angle, 0);
       this._q.setFromEuler(this._e);
       this._p.set(lerp(r.prevX, r.x, alpha), lerp(r.prevY, r.y, alpha), lerp(r.prevZ, r.z, alpha));
       this._s.setScalar(r.w.projectileKind === 'shell' ? 0.65 : 1);
       this._m.compose(this._p, this._q, this._s);
-      this.rocketMesh.setMatrixAt(n++, this._m);
+      if (r.w.projectileKind === 'grenade') this.grenadeMesh.setMatrixAt(grenadeCount++, this._m);
+      else if (r.w.projectileKind === 'bolt') this.boltMesh.setMatrixAt(boltCount++, this._m);
+      else this.rocketMesh.setMatrixAt(n++, this._m);
     }
     this.rocketMesh.count = n;
     this.rocketMesh.instanceMatrix.needsUpdate = true;
+    this.grenadeMesh.count = grenadeCount; this.boltMesh.count = boltCount;
+    this.grenadeMesh.instanceMatrix.needsUpdate = this.boltMesh.instanceMatrix.needsUpdate = true;
 
     n = 0;
     this._s.set(1, 1, 1);
@@ -852,8 +894,10 @@ class Projectiles {
 
   clear() {
     this.rockets.length = 0;
+    this.owners?.clear();
     this.acid.length = 0;
     this.rocketMesh.count = 0;
+    this.grenadeMesh.count = 0; this.boltMesh.count = 0;
     this.acidMesh.count = 0;
   }
 }

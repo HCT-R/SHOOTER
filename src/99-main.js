@@ -39,7 +39,9 @@ function boot() {
     META_UPGRADES: META_UPGRADES, META_BY_ID: META_BY_ID, metaCost: metaCost,
     clampMetaRanks: clampMetaRanks, metaInvested: metaInvested,
     rollPerkOffer: rollPerkOffer, perkAvailable: perkAvailable, perkTagCount: perkTagCount,
-    sanitizeNickname: sanitizeNickname, TWEEN: TWEEN, PixelRenderer: PixelRenderer,
+    sanitizeNickname: sanitizeNickname, TWEEN: TWEEN, CombatCore: CombatCore,
+    CampaignDirector: CampaignDirector, CAMPAIGN_MISSIONS: CAMPAIGN_MISSIONS,
+    campaignProgress: campaignProgress, createCampaignLevel: createCampaignLevel,
     posePlayerWeapon: posePlayerWeapon, configureWeaponModel: configureWeaponModel,
     RUN_FINAL_WAVE: RUN_FINAL_WAVE, WAVES_PER_SECTOR: WAVES_PER_SECTOR,
     RUN_COMPLETE_SAMPLES: RUN_COMPLETE_SAMPLES,
@@ -49,7 +51,9 @@ function boot() {
     DamageNumbers: DamageNumbers, DAMAGE_NUMBER_CAP: DAMAGE_NUMBER_CAP,
     DAMAGE_NUMBER_LIFE: DAMAGE_NUMBER_LIFE, DAMAGE_NUMBER_MERGE: DAMAGE_NUMBER_MERGE,
     ENEMY_BY_ID: ENEMY_BY_ID, nextBossPhase: nextBossPhase,
-    HitStop: HitStop, HIT_STOP: HIT_STOP };
+    HitStop: HitStop, HIT_STOP: HIT_STOP, RoomClient: RoomClient,
+    MODE_DEFS: MODE_DEFS, ArenaMatch: ArenaMatch, GRAPHICS_PRESETS: GRAPHICS_PRESETS,
+    applyGraphicsPreset: applyGraphicsPreset };
   window.AS3D = window.PixelProtocol; // compatibility for existing developer probes
 
   let customizer = null;
@@ -70,12 +74,101 @@ function boot() {
     document.getElementById('menuSamples').textContent = fmt(parseInt(store.get('samples', '0'), 10) || 0);
   };
   refreshMenuTotals();
+  game.modeId = normalizeModeId(store.get('mode', 'campaign'));
+  const refreshModeMenu = () => {
+    const network = game.network;
+    if (game.hud.renderModeMenu) game.hud.renderModeMenu(game.modeId);
+    document.querySelectorAll('[data-mode]').forEach(button => { button.disabled = !!network?.room; });
+    document.getElementById('modePlayersSetting').disabled = !!network?.room || game.modeId === 'campaign' || game.modeId === 'duel';
+    document.getElementById('roomStatus').textContent = network?.message || '';
+    document.getElementById('roomLeaveBtn').hidden = !network?.room;
+    document.getElementById('roomCreateBtn').disabled = !!network?.room || game.modeId === 'campaign';
+    document.getElementById('roomJoinBtn').disabled = !!network?.room;
+    if (network?.room) {
+      document.getElementById('roomCodeSetting').value = network.room.code;
+      document.getElementById('modeSession').textContent = 'КОМНАТА · ' + network.room.participants.length + ' ИГРОКОВ';
+      document.getElementById('modeStatus').textContent = network.isHost ? 'СОЗДАТЕЛЬ КОМНАТЫ' : 'ПОДТВЕРДИТЕ ГОТОВНОСТЬ';
+      document.getElementById('deployBtn').textContent = network.isHost ? 'НАЧАТЬ МАТЧ' : 'ОЖИДАНИЕ СТАРТА';
+      document.getElementById('deployBtn').disabled = !network.isHost || network.room.participants.some(p => !p.ready || !p.connected) || network.room.phase === 'playing';
+    } else document.getElementById('deployBtn').disabled = false;
+    const retry = document.getElementById('btnArenaRetry');
+    if (retry) {
+      retry.disabled = false;
+      retry.textContent = network?.room ? 'В ЛОББИ ДЛЯ РЕВАНША ↗' : 'ЕЩЁ МАТЧ ↗';
+    }
+    const ready = document.getElementById('roomReadyBtn'), roster = document.getElementById('roomRoster');
+    if (ready) { ready.hidden = !network?.room; ready.disabled = network?.room?.phase === 'playing'; ready.textContent = network?.room?.participants.find(p => p.id === network.id)?.ready ? 'ГОТОВ ✓' : 'ГОТОВ К БОЮ'; }
+    if (roster) roster.textContent = network?.room?.participants.map(p => p.name + (p.connected ? p.ready ? ' ✓' : ' · ожидание' : ' · нет связи')).join('  /  ') || '';
+    const continueButton = document.getElementById('campaignContinueBtn'); if (continueButton) continueButton.disabled = !campaignProgress().checkpoint;
+  };
+  game.network = new RoomClient(game, refreshModeMenu);
+  document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => {
+    if (game.network.room) return;
+    game.modeId = button.dataset.mode;
+    store.set('mode', game.modeId);
+    refreshModeMenu();
+  }));
+  document.getElementById('roomCreateBtn').addEventListener('click', () => game.network.create(game.modeId));
+  document.getElementById('roomJoinBtn').addEventListener('click', () => game.network.join(document.getElementById('roomCodeSetting').value));
+  document.getElementById('roomLeaveBtn').addEventListener('click', () => game.network.leave());
+  document.getElementById('modePlayersSetting').addEventListener('change', refreshModeMenu);
+  document.getElementById('roomReadyBtn')?.addEventListener('click', () => game.network.ready(!game.network.room?.participants.find(p => p.id === game.network.id)?.ready));
+  document.getElementById('spectatorPrevBtn')?.addEventListener('click', () => { if (game.arena) game.arena.spectateStep = -1; });
+  document.getElementById('spectatorNextBtn')?.addEventListener('click', () => { if (game.arena) game.arena.spectateStep = 1; });
+  const runOptions = () => ({ botCount: Number(document.getElementById('modePlayersSetting').value), difficulty: document.getElementById('botDifficultySetting')?.value || 'normal', loadout: document.getElementById('loadoutSetting')?.value || 'assault', missionId: selectedMission });
+  let selectedMission = campaignProgress().checkpoint?.missionId || 1;
+  const loadoutControl = document.getElementById('loadoutSetting');
+  if (loadoutControl) for (const weapon of WEAPONS) { const option = document.createElement('option'); option.value = 'weapon:' + weapon.id; option.textContent = weapon.name; loadoutControl.appendChild(option); }
+  const respawnLoadout = document.getElementById('respawnLoadoutSetting');
+  if (respawnLoadout && loadoutControl) {
+    respawnLoadout.textContent = '';
+    for (const option of loadoutControl.options) respawnLoadout.appendChild(option.cloneNode(true));
+    respawnLoadout.value = loadoutControl.value;
+    respawnLoadout.addEventListener('change', () => { loadoutControl.value = respawnLoadout.value; });
+    loadoutControl.addEventListener('change', () => { respawnLoadout.value = loadoutControl.value; });
+  }
+  loadoutControl?.addEventListener('change', () => { if (game.network.room) game.network.ready(false); });
+  document.getElementById('btnArenaRetry').addEventListener('click', () => {
+    if (game.network.room) { game.network.returnToLobby(); return; }
+    game.startRun(undefined, game.modeId, runOptions());
+  });
+  document.getElementById('btnArenaMenu').addEventListener('click', () => {
+    game.network.returnToLobby(); refreshMenuTotals(); refreshModeMenu();
+  });
+  refreshModeMenu();
   const volume = document.getElementById('volumeSetting');
   volume.value = clamp(Number(store.get('volume', '55')), 0, 100);
   sfx.musicOn = store.get('music', '1') !== '0';
   volume.addEventListener('input', () => {
     store.set('volume', volume.value);
-    if (sfx.master) sfx.master.gain.setTargetAtTime(Number(volume.value) / 100, sfx.ctx.currentTime, 0.05);
+    sfx.setMaster(Number(volume.value) / 100);
+    document.getElementById('volumeValue').textContent = volume.value + '%';
+  });
+  document.getElementById('volumeValue').textContent = volume.value + '%';
+  sfx.setMaster(Number(volume.value) / 100);
+  for (const [id, key, method, fallback] of [
+    ['sfxVolumeSetting', 'sfxVolume', 'setSfx', '85'],
+    ['musicVolumeSetting', 'musicVolume', 'setMusic', '55']
+  ]) {
+    const control = document.getElementById(id);
+    control.value = store.get(key, fallback);
+    const change = () => {
+      sfx[method](Number(control.value) / 100);
+      document.getElementById(key + 'Value').textContent = control.value + '%';
+    };
+    change();
+    control.addEventListener('input', () => { change(); store.set(key, control.value); });
+  }
+  const quality = document.getElementById('qualitySetting');
+  quality.value = store.get('quality', 'balanced');
+  applyGraphicsPreset(game, quality.value, customizer);
+  quality.addEventListener('change', () => {
+    applyGraphicsPreset(game, quality.value, customizer);
+    store.set('quality', quality.value);
+  });
+  document.addEventListener('click', event => {
+    if (!event.target.closest('button') || event.target.closest('#oskKeys')) return;
+    sfx.init(); sfx.resume(); sfx.ui('select');
   });
   const motion = document.getElementById('motionSetting');
   if (store.get('motion', '') === '' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) game.motionScale = 0;
@@ -92,15 +185,6 @@ function boot() {
     // few numbers hang there until they age out
     if (!dmgnum.checked) game.damageNumbers.clear();
     store.set('dmgnum', dmgnum.checked ? '1' : '0');
-  });
-  const pixelSetting = document.getElementById('pixelSetting');
-  pixelSetting.value = String(game.pixelFX.pixelSize);
-  pixelSetting.addEventListener('change', () => {
-    game.pixelFX.setPixelSize(pixelSetting.value);
-    if (customizer && customizer.pixelFX) customizer.pixelFX.setPixelSize(pixelSetting.value);
-    store.set('pixels', game.pixelFX.pixelSize);
-    game.pixelRatioScale = 1;
-    game.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   });
   document.getElementById('upgradeClose').addEventListener('click', () => game.closeUpgrades());
   document.getElementById('upgradeGrid').addEventListener('click', (e) => {
@@ -146,11 +230,32 @@ function boot() {
   const beginRun = () => {
     sfx.init();
     sfx.resume();
-    if (sfx.master) sfx.master.gain.value = Number(volume.value) / 100;
+    sfx.setMaster(Number(volume.value) / 100);
+    if (game.network.room) { game.network.start(); return; }
     document.getElementById('start').classList.remove('show');
-    game.startRun();
+    game.startRun(undefined, game.modeId, runOptions());
   };
   document.getElementById('deployBtn').addEventListener('click', beginRun);
+  const menu = () => {
+    if (game.campaign) { game.campaign.dispose(); game.campaign = null; }
+    game.state = ST_MENU; game.input.clear(); document.body.classList.remove('playing');
+    for (const id of ['campaignComplete', 'campaignFailed', 'missionSelectScreen', 'pause']) document.getElementById(id)?.classList.remove('show');
+    document.getElementById('start').classList.add('show'); refreshMenuTotals(); refreshModeMenu();
+  };
+  document.getElementById('campaignBtn')?.addEventListener('click', () => {
+    game.hud.renderCampaignMenu(); document.getElementById('start').classList.remove('show'); document.getElementById('missionSelectScreen').classList.add('show');
+  });
+  document.getElementById('missionSelectBack')?.addEventListener('click', menu);
+  document.getElementById('missionGrid')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-mission]'); if (!button || button.disabled) return;
+    selectedMission = Number(button.dataset.mission); game.modeId = 'campaign'; game.startRun(undefined, 'campaign', runOptions());
+  });
+  const resumeCampaign = () => { const cp = campaignProgress().checkpoint; if (cp) { selectedMission = cp.missionId; game.startRun(cp.seed, 'campaign', { ...runOptions(), missionId: cp.missionId, resume: true }); } };
+  document.getElementById('campaignContinueBtn')?.addEventListener('click', resumeCampaign);
+  document.getElementById('checkpointRetryBtn')?.addEventListener('click', resumeCampaign);
+  document.getElementById('missionRetryBtn')?.addEventListener('click', () => game.startRun(game.runSeed, 'campaign', { ...runOptions(), missionId: game.modeOptions.missionId || selectedMission }));
+  document.getElementById('campaignNextBtn')?.addEventListener('click', () => { if (campaignProgress().checkpoint) resumeCampaign(); else menu(); });
+  for (const id of ['campaignMenuBtn', 'campaignFailedMenuBtn']) document.getElementById(id)?.addEventListener('click', menu);
   document.getElementById('custBtn').addEventListener('click', () => {
     if (!customizer) return;
     document.getElementById('start').classList.remove('show');
@@ -291,6 +396,8 @@ function boot() {
     document.getElementById('pause').classList.remove('show');
   });
   document.getElementById('quitBtn').addEventListener('click', () => {
+    if (game.network.room) { game.network.leave(); return; }
+    if (game.leaveArena) game.leaveArena();
     document.getElementById('pause').classList.remove('show');
     document.getElementById('start').classList.add('show');
     game.state = ST_MENU;
@@ -382,13 +489,13 @@ function boot() {
 
     // drop internal resolution if we are consistently missing frame budget
     if (raw > 0.026) { slowFrames++; fastFrames = 0; } else { fastFrames++; slowFrames = 0; }
-    if (!game.pixelFX.pixelSize && slowFrames > 90 && game.pixelRatioScale > 0.64) {
+    if (slowFrames > 90 && game.pixelRatioScale > 0.64) {
       game.pixelRatioScale = Math.max(0.64, game.pixelRatioScale - 0.18);
-      game.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * game.pixelRatioScale);
+      game.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, game.qualityRatio || 2) * game.pixelRatioScale);
       slowFrames = 0;
     } else if (fastFrames > 600 && game.pixelRatioScale < 1) {
       game.pixelRatioScale = Math.min(1, game.pixelRatioScale + 0.18);
-      game.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * game.pixelRatioScale);
+      game.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, game.qualityRatio || 2) * game.pixelRatioScale);
       fastFrames = 0;
     }
   }

@@ -81,6 +81,40 @@ class SparkFX {
     }
   }
 
+  // Small, repeatable silhouettes read better than a large round bloom.
+  // These are presentation-only patterns; they never draw from the run RNG.
+  muzzle(x, y, z, dx, dz, color, heavy) {
+    const scale = heavy ? 1.4 : 1;
+    this.emit(x, y, z, dx * 2, 0, dz * 2, 0.075, 0.62 * scale, color, 0);
+    this.emit(x + dx * 0.12, y, z + dz * 0.12, dx * 4, 0, dz * 4,
+      0.052, 0.29 * scale, 0xfff6df, 0);
+    for (let side = -1; side <= 1; side += 2) {
+      this.emit(x + dx * 0.2, y, z + dz * 0.2,
+        dx * 7 + dz * side * 2.4, 0.35, dz * 7 - dx * side * 2.4,
+        0.095, 0.16 * scale, color, 2);
+    }
+  }
+
+  impact(x, y, z, dx, dz, color, hard) {
+    this.emit(x, y, z, 0, 0, 0, 0.075, hard ? 0.36 : 0.28, 0xfff4d9, 0);
+    for (let side = -1; side <= 1; side += 2) {
+      this.emit(x, y, z, -dx * 2.5 + dz * side * 3.4, hard ? 2.5 : 1.2,
+        -dz * 2.5 - dx * side * 3.4, hard ? 0.24 : 0.16, 0.17, color, hard ? 12 : 5);
+    }
+  }
+
+  dashWake(x, z, dx, dz) {
+    // Two parallel cyan wakes preserve the actor's shape and direction.
+    for (let side = -1; side <= 1; side += 2) {
+      for (let step = 0; step < 3; step++) {
+        this.emit(x + dz * side * 0.28 - dx * step * 0.18, 0.18 + step * 0.19,
+          z - dx * side * 0.28 - dz * step * 0.18,
+          -dx * (4 + step), 0.12, -dz * (4 + step), 0.2 + step * 0.035,
+          0.18 + step * 0.045, step === 0 ? 0xe1ffff : 0x57e5ff, 0);
+      }
+    }
+  }
+
   update(dt, camQuat) {
     let i = 0;
     while (i < this.n) {
@@ -509,6 +543,17 @@ class TracerFX {
     this.mesh.count = 0;
     this.mesh.renderOrder = 9;
     scene.add(this.mesh);
+    // A narrow hot core keeps individual rounds legible over lit floors.
+    // It shares the same bounded slot range as the glow: two draw calls,
+    // independent of fire rate and without creating a mesh for each shot.
+    const coreMat = new THREE.MeshBasicMaterial({
+      map: TEX.glow, blending: THREE.AdditiveBlending, transparent: true,
+      depthWrite: false, toneMapped: false, opacity: 0.88
+    });
+    this.core = new THREE.InstancedMesh(geo, coreMat, capacity);
+    this.core.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.core.frustumCulled = false; this.core.count = 0; this.core.renderOrder = 10;
+    scene.add(this.core);
     this._eul = new THREE.Euler();
   }
 
@@ -544,19 +589,29 @@ class TracerFX {
       this._eul.set(-Math.PI / 2, 0, -Math.atan2(dz, dx));
       _fxQuat.setFromEuler(this._eul);
       _fxPos.set((this.ax[i] + this.bx[i]) / 2, this.y[i], (this.az[i] + this.bz[i]) / 2);
-      _fxScl.set(len, this.width[i] * (0.4 + t * 0.6), 1);
+      _fxScl.set(len, this.width[i] * (0.6 + t * 0.8), 1);
       _fxMtx.compose(_fxPos, _fxQuat, _fxScl);
       this.mesh.setMatrixAt(i, _fxMtx);
       _fxCol.setRGB(this.r[i] * t, this.g[i] * t, this.b[i] * t);
       this.mesh.setColorAt(i, _fxCol);
+      _fxScl.set(len * 0.98, Math.max(0.028, this.width[i] * 0.26) * (0.5 + t * 0.5), 1);
+      _fxMtx.compose(_fxPos, _fxQuat, _fxScl);
+      this.core.setMatrixAt(i, _fxMtx);
+      const coreFade = t * t;
+      _fxCol.setRGB((0.78 + this.r[i] * 0.22) * coreFade,
+        (0.78 + this.g[i] * 0.22) * coreFade, (0.78 + this.b[i] * 0.22) * coreFade);
+      this.core.setColorAt(i, _fxCol);
       i++;
     }
     this.mesh.count = this.n;
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.core.count = this.n;
+    this.core.instanceMatrix.needsUpdate = true;
+    if (this.core.instanceColor) this.core.instanceColor.needsUpdate = true;
   }
 
-  clear() { this.n = 0; this.mesh.count = 0; }
+  clear() { this.n = 0; this.mesh.count = 0; this.core.count = 0; }
 }
 
 /* ---------------------------------------------------------- blob shadows */

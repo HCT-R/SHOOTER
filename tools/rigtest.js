@@ -13,8 +13,9 @@ function inspectRigPose(THREE, model, root, weapon, weaponMesh, reloading) {
   const left = model.handL.getWorldPosition(new THREE.Vector3());
   const grip = new THREE.Vector3(...weapon.pose.grip).applyMatrix4(weaponMesh.matrixWorld);
   const support = new THREE.Vector3(...weapon.pose.support).applyMatrix4(weaponMesh.matrixWorld);
-  const gripTarget = model.gripTarget.clone().applyMatrix4(root.matrixWorld);
-  const supportTarget = model.supportTarget.clone().applyMatrix4(root.matrixWorld);
+  const poseRoot = model.poseRoot || root;
+  const gripTarget = model.gripTarget.clone().applyMatrix4(poseRoot.matrixWorld);
+  const supportTarget = model.supportTarget.clone().applyMatrix4(poseRoot.matrixWorld);
   const muzzle = new THREE.Vector3(...weapon.muzzle).applyMatrix4(weaponMesh.matrixWorld);
   const receiver = root.worldToLocal(new THREE.Vector3(0, 0, 0.12).applyMatrix4(weaponMesh.matrixWorld));
   let limbLengthError = 0, jointGap = 0;
@@ -30,9 +31,9 @@ function inspectRigPose(THREE, model, root, weapon, weaponMesh, reloading) {
   return {
     finite: finite.every(Number.isFinite),
     gripError: right.distanceTo(grip),
-    supportError: left.distanceTo(reloading ? supportTarget : support),
+    supportError: left.distanceTo(reloading || weapon.pose.oneHanded ? supportTarget : support),
     gripTargetError: gripTarget.distanceTo(grip),
-    supportTargetError: reloading ? 0 : supportTarget.distanceTo(support),
+    supportTargetError: reloading || weapon.pose.oneHanded ? 0 : supportTarget.distanceTo(support),
     limbLengthError: limbLengthError,
     jointGap: jointGap,
     gripDepth: model.gripTarget.z,
@@ -71,7 +72,7 @@ async function main() {
   for (const file of ['00-util.js', '05-save.js', '40-models.js', '45-customize.js', '60-weapons.js', '80-player.js']) {
     new vm.Script(fs.readFileSync(path.join(workspace, 'src', file), 'utf8'), { filename: file }).runInContext(context);
   }
-  const api = vm.runInContext('({ Player, WEAPONS, initPrimitives, buildWeaponGeometries, clampLook, part, G })', context);
+  const api = vm.runInContext('({ Player, WEAPONS, initPrimitives, buildWeaponGeometries, clampLook, part, G, sampleMeleePose })', context);
   api.initPrimitives(); api.buildWeaponGeometries();
   const surface = api.part(api.G.box, { color: 0x808080 });
   const expectedColor = new THREE.Color(0x808080);
@@ -93,6 +94,7 @@ async function main() {
     player.reloadTotal = weapon.reload;
     player.reloading = pose.reload * weapon.reload;
     player.spin = weapon.spinUp ? 1 : 0;
+    player.meleeAttack = pose.attack !== undefined ? { age: pose.attack, total: 1, heavy: !!pose.heavy } : null;
     player.angle = 0.7 + cases * 0.17;
     player.updateModel(1 / 60, pose.speed, player.x + 8, player.z + 4);
     const metrics = inspectRigPose(THREE, player.model, player.root, weapon, player.weaponMesh, pose.reload > 0);
@@ -109,6 +111,11 @@ async function main() {
       assert(metrics.gripDepth >= 0.37 && metrics.receiverClearsBody,
         label + ': firing hand or receiver sits inside the chest');
     }
+    if (!pose.attack) {
+      assert(player.model.upperBody.rotation.toArray().slice(0, 3).every(v => Math.abs(v) < 1e-8) &&
+        Math.abs(player.model.upperBody.position.z) < 1e-8 && Math.abs(player.model.head.rotation.y) < 1e-8,
+        label + ': previous melee stroke leaked into the next pose');
+    }
     const muzzle = player.muzzleWorld(new THREE.Vector3());
     const renderedMuzzle = new THREE.Vector3(...weapon.muzzle).applyMatrix4(player.weaponMesh.matrixWorld);
     assert(muzzle.toArray().every(Number.isFinite) && muzzle.distanceTo(renderedMuzzle) < 1e-5,
@@ -121,6 +128,38 @@ async function main() {
     const weapon = api.WEAPONS[i];
     assert(weapon.pose && player.model.handL && player.model.handR, weapon.id + ': grip rig metadata missing');
     for (const pose of RIG_POSES) inspect(weapon, pose, weapon.id + '/' + pose.name);
+    if (weapon.fire === 'melee') {
+      for (const heavy of [false, true]) {
+        const spec = heavy ? weapon.heavy : weapon, total = spec.windup + spec.activeTime + spec.recovery;
+        const boundaries = [0, spec.windup / total, (spec.windup + spec.activeTime) / total, 1];
+        const samples = new Set(Array.from({ length: 241 }, (_, i) => i / 240));
+        for (const point of boundaries) for (const delta of [-1e-6, 0, 1e-6]) samples.add(Math.max(0, Math.min(1, point + delta)));
+        for (const attack of Array.from(samples).sort((a, b) => a - b)) {
+          inspect(weapon, { ...RIG_POSES[0], name: 'attack', attack, heavy }, weapon.id + '/attack-' + attack + '-' + heavy);
+        }
+        for (const boundary of boundaries) {
+          const before = api.sampleMeleePose(weapon, Math.max(0, boundary - 1e-6), heavy);
+          const after = api.sampleMeleePose(weapon, Math.min(1, boundary + 1e-6), heavy);
+          assert(before.values.every((value, index) => Math.abs(value - after.values[index]) < 1e-3), weapon.id + ': pose discontinuity at phase boundary');
+        }
+        for (const [phase, age] of [['windup', spec.windup / 2], ['active', spec.windup + spec.activeTime / 2], ['recovery', spec.windup + spec.activeTime + spec.recovery / 2]]) {
+          assert.strictEqual(api.sampleMeleePose(weapon, age / total, heavy).phase, phase, weapon.id + ': visual phase disagrees with combat');
+          inspect(weapon, { ...RIG_POSES[2], name: 'moving-attack', attack: age / total, heavy }, weapon.id + '/moving-' + phase + '-' + heavy);
+        }
+        assert(api.sampleMeleePose(weapon, 1, heavy).values.every(v => v === 0), weapon.id + ': stroke does not settle to ready');
+      }
+      player.meleeAttack = null;
+    } else {
+      inspect(weapon, RIG_POSES[0], weapon.id + '/mechanism-idle');
+      const parts = player.weaponMesh.userData.weaponParts;
+      assert(parts.length && parts.every(p => p.name && p.geometry.userData.shared), weapon.id + ': missing shared moving mechanism');
+      const poses = new Map(parts.map(p => [p.name, p.matrix.clone()]));
+      inspect(weapon, RIG_POSES[6], weapon.id + '/mechanism-reload');
+      const reloadPart = parts.find(p => ['magazine', 'cylinder', 'pump', 'breakBarrels', 'bowString'].includes(p.name));
+      if (reloadPart) assert(!reloadPart.matrix.equals(poses.get(reloadPart.name)), weapon.id + ': reload mechanism never moves');
+      assert(player.weaponMesh.material.isMeshStandardMaterial && !player.weaponMesh.material.flatShading,
+        weapon.id + ': weapon lost its smooth physically lit material');
+    }
   }
   player.x = -4; player.z = 11;
   player.applyLook(api.clampLook({ helmet: 'recon', shoulders: 'heavy', backpack: false }));

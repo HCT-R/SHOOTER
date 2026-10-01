@@ -12,7 +12,7 @@ for (const name of ['Crawler', 'Grunt', 'Spitter', 'Flyer', 'Brute', 'Queen', 'S
   context['build' + name] = () => {};
 }
 vm.createContext(context);
-for (const file of ['00-util.js', '30-level.js', '70-enemies.js']) {
+for (const file of ['00-util.js', '30-level.js', '60-weapons.js', '62-combat-core.js', '70-enemies.js']) {
   new vm.Script(fs.readFileSync(path.join(root, 'src', file), 'utf8'), { filename: file }).runInContext(context);
 }
 const { LevelMap, EnemyManager, makeRng, SpatialHash } = vm.runInContext(

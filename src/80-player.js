@@ -11,6 +11,8 @@
    ("the third one"), not named actions, and rebinding them would only make
    the on-screen numbers lie. */
 const ACTIONS = [
+  { id: 'interact', label: 'Взаимодействовать', keys: ['KeyV'], pad: [10] },
+  { id: 'heal', label: 'Аптечка', keys: ['KeyH'], pad: [11] },
   { id: 'moveUp', label: 'Вперёд', keys: ['KeyW', 'ArrowUp'], pad: [12] },
   { id: 'moveDown', label: 'Назад', keys: ['KeyS', 'ArrowDown'], pad: [13] },
   { id: 'moveLeft', label: 'Влево', keys: ['KeyA', 'ArrowLeft'], pad: [14] },
@@ -88,7 +90,7 @@ class InputState {
     this.keys = Object.create(null);
     this.pressed = Object.create(null);
     this.mouseDown = false;
-    this.mousePressed = false;
+    this.mousePressed = false; this.rightPressed = false;
     this.rightDown = false;
     this.mx = 0;
     this.my = 0;
@@ -125,7 +127,7 @@ class InputState {
         if (!this.mouseDown) this.mousePressed = true;
         this.mouseDown = true;
       }
-      if (e.button === 2) this.rightDown = true;
+      if (e.button === 2) { if (!this.rightDown) this.rightPressed = true; this.rightDown = true; }
     };
     this._onUp = (e) => {
       if (e.button === 0) this.mouseDown = false;
@@ -158,7 +160,7 @@ class InputState {
     this.padButtons = [];
     this.wheel = 0;
     this.mouseDown = this.rightDown = false;
-    this.mousePressed = false;
+    this.mousePressed = false; this.rightPressed = false;
   }
 
   /* The whole game asks through these two. A key and a pad button are the
@@ -249,7 +251,7 @@ class InputState {
     this.pressed = Object.create(null);
     this.padPressed = Object.create(null);
     this.wheel = 0;
-    this.mousePressed = false;
+    this.mousePressed = false; this.rightPressed = false;
   }
 }
 
@@ -300,6 +302,46 @@ class Player {
     this.silhouette.frustumCulled = false;
     game.scene.add(this.silhouette);
 
+    // The local marine has open corner brackets, never an opponent's ring.
+    // All geometry is built once; animation only changes transforms/colors.
+    this.selfReadout = new THREE.Group();
+    this.selfReadout.name = 'local-player-readout';
+    const bracketParts = [];
+    for (const x of [-1, 1]) for (const z of [-1, 1]) {
+      bracketParts.push(part(G.box, { pos: [x * 0.67, 0, z * 0.8], scale: [0.34, 0.008, 0.065], color: 0xffffff }));
+      bracketParts.push(part(G.box, { pos: [x * 0.8, 0, z * 0.67], scale: [0.065, 0.008, 0.34], color: 0xffffff }));
+    }
+    this.selfBrackets = new THREE.Mesh(mergeParts(bracketParts), new THREE.MeshBasicMaterial({
+      color: 0x6ce8ff, transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false
+    }));
+    this.selfBrackets.renderOrder = 4;
+    this.selfReadout.add(this.selfBrackets);
+    const chevron = new THREE.BufferGeometry();
+    chevron.setAttribute('position', new THREE.Float32BufferAttribute([
+      -0.19, 0, -0.1, 0, 0, 0.19, 0, 0, 0.05,
+      0.19, 0, -0.1, 0, 0, 0.05, 0, 0, 0.19
+    ], 3));
+    this.selfDirection = new THREE.Mesh(chevron, new THREE.MeshBasicMaterial({
+      color: 0xd5faff, side: THREE.DoubleSide, transparent: true, opacity: 0.95,
+      depthWrite: false, toneMapped: false
+    }));
+    this.selfDirection.renderOrder = 4;
+    this.selfReadout.add(this.selfDirection);
+    const barGeo = new THREE.BoxGeometry(1, 0.012, 0.09);
+    this.reloadTrack = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({
+      color: 0x0b202e, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false
+    }));
+    this.reloadTrack.position.set(0, 0.005, 1.35); this.reloadTrack.scale.x = 1.26;
+    this.reloadFill = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({
+      color: 0xffd082, transparent: true, opacity: 1, depthWrite: false, toneMapped: false
+    }));
+    this.reloadFill.position.set(0, 0.018, 1.35);
+    this.reloadTrack.renderOrder = 4; this.reloadFill.renderOrder = 5;
+    this.selfReadout.add(this.reloadTrack, this.reloadFill);
+    this._selfColor = new THREE.Color(0x6ce8ff);
+    this._selfHurtColor = new THREE.Color(0xff796d);
+    game.scene.add(this.selfReadout);
+
     // put the solid marine into the transparent queue just after the
     // silhouette so the draw order above actually holds
     m.material.transparent = true;
@@ -307,7 +349,7 @@ class Player {
     this.root.traverse((o) => { if (o.isMesh) o.renderOrder = 5; });
 
     // a spotlight cone from the muzzle sells the darkness of the facility
-    this.torch = new THREE.SpotLight(0xffe6c0, 150, 36, 0.62, 0.6, 1.5);
+    this.torch = new THREE.SpotLight(0xffe6c0, 95, 36, 0.62, 0.78, 1.5);
     this.torch.position.set(0, 1.3, 0);
     this.torchTarget = new THREE.Object3D();
     game.scene.add(this.torchTarget);
@@ -317,7 +359,7 @@ class Player {
 
     // a soft pool of light around the marine so he and whatever is clawing at
     // him stay readable even with the flashlight pointed elsewhere
-    this.suitLight = new THREE.PointLight(0xbcd8ff, 26, 11, 1.6);
+    this.suitLight = new THREE.PointLight(0xbcd8ff, 9, 11, 1.6);
     this.suitLight.position.set(0, 1.5, 0);
     this.root.add(this.suitLight);
 
@@ -341,7 +383,7 @@ class Player {
      lights or the equipped weapon mesh */
   applyLook(look) {
     const old = this.model;
-    const pieces = [old.torso, old.head, old.legL, old.legR, old.armL, old.armR, old.weaponPivot];
+    const pieces = [old.upperBody, old.legL, old.legR];
     old.weaponPivot.remove(this.weaponMesh);
     const disposed = new Set();
     for (const piece of pieces) {
@@ -357,7 +399,7 @@ class Player {
 
     const m = buildPlayer(look || loadLook());
     this.model = m;
-    this.root.add(m.torso, m.head, m.legL, m.legR, m.armL, m.armR, m.weaponPivot);
+    this.root.add(m.upperBody, m.legL, m.legR);
     m.root = this.root;
     m.material.transparent = true;
     m.material.opacity = 1;
@@ -379,9 +421,10 @@ class Player {
     this.armor = 0; this.maxArmor = 100;
     this.alive = true;
 
-    this.owned = { pistol: true };
+    this.owned = { pistol: true, knife: true };
+    this.meleeId = 'knife';
     this.mags = { pistol: WEAPON_BY_ID.pistol.mag };
-    this.ammo = { shell: 0, smg: 0, rifle: 0, fuel: 0, mini: 0, rocket: 0, cell: 0, slug: 0, cannon: 0 };
+    this.ammo = Object.fromEntries(Object.keys(AMMO_TYPES).filter(id => id !== 'none').map(id => [id, 0]));
     this.damageMultiplier = 1;
     this.reloadMultiplier = 1;
     // crit knobs are run-local and multiply the per-weapon table, so field
@@ -399,6 +442,8 @@ class Player {
     this.burnChains = false;
     this.weaponIndex = 0;
     this.fireTimer = 0;
+    this._burstRemaining = 0; this._burstTimer = 0; this._burstAimX = this._burstAimZ = 0;
+    this.meleeAttack = null; this.meleeSequence = 0;
     this.reloading = 0;
     this.reloadTotal = 0;
     this.spin = 0;
@@ -439,6 +484,7 @@ class Player {
   get mag() { return this.mags[this.weapon.id] || 0; }
   get reserve() {
     const w = this.weapon;
+    if (this.game.arena?.self?.reserveLimited) return this.game.arena.self.reserve || 0;
     return w.ammo === 'none' ? Infinity : this.ammo[w.ammo];
   }
 
@@ -450,7 +496,19 @@ class Player {
 
   /* Weapons that occupy a harness slot. The sidearm is carried for free. */
   carriedList() {
-    return this.ownedList().filter((i) => WEAPONS[i].id !== 'pistol');
+    return this.ownedList().filter(i => WEAPONS[i].slot === 'primary');
+  }
+
+  loadoutList() {
+    if (this.game.arena && Array.isArray(this.weaponSlots)) {
+      return this.weaponSlots.map(id => WEAPONS.findIndex(w => w.id === id)).filter(index => index >= 0);
+    }
+    const out = [], sidearm = WEAPONS.findIndex(w => w.id === 'pistol');
+    if (this.owned.pistol) out.push(sidearm);
+    out.push(...this.carriedList().slice(0, ARSENAL_SLOTS));
+    const melee = WEAPONS.findIndex(w => w.id === this.meleeId && this.owned[w.id]);
+    if (melee >= 0) out.push(melee);
+    return out;
   }
 
   arsenalFull() { return this.carriedList().length >= ARSENAL_SLOTS; }
@@ -458,10 +516,11 @@ class Player {
   /* Giving up a weapon returns its slot. The sidearm cannot be dropped, and
      dropping whatever is in hand falls back to it rather than to nothing. */
   dropWeapon(id) {
-    if (id === 'pistol' || !this.owned[id]) return false;
+    if (id === 'pistol' || id === 'knife' || !this.owned[id] || this.meleeAttack || this._burstRemaining > 0) return false;
     const wasHeld = this.weapon.id === id;
     delete this.owned[id];
     delete this.mags[id];
+    if (this.meleeId === id) this.meleeId = 'knife';
     if (wasHeld) {
       this.reloading = 0;
       this.reloadTotal = 0;
@@ -472,10 +531,12 @@ class Player {
   }
 
   setWeapon(index) {
+    if (this.meleeAttack || this._burstRemaining > 0) return;
     const w = WEAPONS[index];
     if (!w || !this.owned[w.id]) return;
     if (this.weaponIndex === index && this.weaponMesh.geometry === WEAPON_GEO[w.geo]) return;
     this.weaponIndex = index;
+    if (w.fire === 'melee') this.meleeId = w.id;
     this.weaponMesh.geometry = WEAPON_GEO[w.geo];
     configureWeaponModel(this.weaponMesh, w, this.model.material);
     this.reloading = 0;
@@ -491,7 +552,7 @@ class Player {
   }
 
   cycleWeapon(dir) {
-    const list = this.ownedList();
+    const list = this.loadoutList();
     if (list.length < 2) return;
     let at = list.indexOf(this.weaponIndex);
     at = (at + dir + list.length) % list.length;
@@ -536,12 +597,13 @@ class Player {
 
   startReload() {
     const w = this.weapon;
+    if (w.usesAmmo === false || this.meleeAttack || this._burstRemaining > 0) return;
     if (this.reloading > 0) return;
     if (this.mag >= w.mag) return;
     if (w.ammo !== 'none' && this.ammo[w.ammo] <= 0) return;
     this.reloading = w.reload * this.reloadMultiplier;
     this.reloadTotal = this.reloading;
-    sfx.reload('out');
+    sfx.reload('out', w.reloadStyle || w.id);
   }
 
   finishReload() {
@@ -554,7 +616,7 @@ class Player {
       this.mags[w.id] = this.mag + take;
       this.ammo[w.ammo] -= take;
     }
-    sfx.reload('in');
+    sfx.reload('in', w.reloadStyle || w.id);
     if (w.shellReload && this.mag < w.mag && this.reserve > 0) {
       this.reloading = (w.shellTime || w.reload) * this.reloadMultiplier;
       this.reloadTotal = this.reloading;
@@ -599,7 +661,7 @@ class Player {
     if (a.time >= a.flight + a.fuse) {
       this.grenade = null;
       this.grenadeMesh.visible = false;
-      this.game.explosion(a.tx, 0.35, a.tz, a.damage, a.radius, false);
+      this.game.explosion(a.tx, 0.35, a.tz, a.damage, a.radius, false, this.id || 'campaign-player');
       sfx.grenade('detonate');
     }
   }
@@ -607,11 +669,8 @@ class Player {
   takeDamage(amount, srcX, srcZ) {
     if (!this.alive || this.invuln > 0) return;
     // armour eats most of the hit but degrades as it does
-    if (this.armor > 0) {
-      const absorbed = Math.min(this.armor, amount * 0.62);
-      this.armor -= absorbed;
-      amount -= absorbed;
-    }
+    const mitigated = CombatCore.mitigateDamage(amount, this.armor, .62);
+    this.armor = mitigated.armor; amount = mitigated.damage;
     this.hp -= amount;
     this.hurtFlash = 1;
     this.invuln = 0.28;
@@ -620,6 +679,7 @@ class Player {
 
     const g = this.game;
     const a = Math.atan2(this.x - srcX, this.z - srcZ);
+    if (g.hud && g.hud.damageIndicator) g.hud.damageIndicator(srcX, srcZ, amount);
     g.shake(Math.min(7, 2 + amount * 0.09), 0.28, Math.sin(a), Math.cos(a));
     g.fx.sparks.burst(this.x, 1.2, this.z, 6, 4, 0.4, 0.32, 0xd41a1a, 0.7, 12);
     g.fx.decals.blood(this.x + Math.sin(a) * 0.5, this.z + Math.cos(a) * 0.5, 1.6, 0xff8888);
@@ -627,6 +687,8 @@ class Player {
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
+      this.selfReadout.visible = false;
+      this.meleeAttack = null; this._burstRemaining = 0;
       g.onPlayerDeath();
     }
   }
@@ -646,7 +708,7 @@ class Player {
     if (this.dashCd > 0) this.dashCd -= dt;
     this.grenadeCd = Math.max(0, this.grenadeCd - dt);
     this.bloom = damp(this.bloom, 0, 4.8, dt);
-    this.aiming = input.rightDown || input.actionDown('aim');
+    this.aiming = this.weapon.fire !== 'melee' && (input.rightDown || input.actionDown('aim'));
     this.updateGrenade(dt);
 
     /* --- aim ------------------------------------------------------- */
@@ -692,10 +754,10 @@ class Player {
       const dashX = mx / mlen, dashZ = mz / mlen;
       this.dashX = dashX; this.dashZ = dashZ;
       sfx.dash();
-      for (let i = 0; i < 12; i++) {
-        g.fx.sparks.emit(this.x, 0.4 + Math.random(), this.z,
-          -dashX * 5 + (Math.random() - 0.5) * 2, Math.random() * 1.5, -dashZ * 5 + (Math.random() - 0.5) * 2,
-          0.3, 0.28, 0x8fd8ff, 4);
+      if (g.fx.sparks.dashWake) g.fx.sparks.dashWake(this.x, this.z, dashX, dashZ);
+      for (let side = -1; side <= 1; side += 2) {
+        const wakeX = this.x + dashZ * side * 0.27, wakeZ = this.z - dashX * side * 0.27;
+        g.fx.tracers.add(wakeX, 0.16, wakeZ, wakeX - dashX * 1.2, wakeZ - dashZ * 1.2, 0.11, 0x56e7ff, 0.16);
       }
     }
 
@@ -724,9 +786,8 @@ class Player {
     this.spreadScale = (this.aiming ? 0.42 : 1) * (1 + this.bloom + (sprinting && mlen > 0 ? 0.65 : 0));
 
     /* --- weapon switching ------------------------------------------ */
-    for (let i = 0; i < WEAPONS.length; i++) {
-      if (input.once('Digit' + ((i + 1) % 10))) this.setWeapon(i);
-    }
+    const slots = this.loadoutList();
+    for (let i = 0; i < slots.length; i++) if (input.once('Digit' + (i + 1))) this.setWeapon(slots[i]);
     if (input.actionOnce('prevWeapon')) this.cycleWeapon(-1);
     if (input.actionOnce('nextWeapon')) this.cycleWeapon(1);
     if (input.wheel) this.cycleWeapon(input.wheel > 0 ? 1 : -1);
@@ -740,7 +801,9 @@ class Player {
     // A complete click between ticks still fires once. A new press also
     // releases a semi-auto latch left over from the previous held trigger.
     if (input.mousePressed || input.actionOnce('fire')) this.triggerLatched = false;
-    const wantFire = input.mouseDown || input.mousePressed || input.actionDown('fire');
+    const heavyMelee = w.fire === 'melee' && (input.rightDown || input.rightPressed || input.actionDown('aim'));
+    if (input.rightPressed || (w.fire === 'melee' && input.actionOnce('aim'))) this.triggerLatched = false;
+    const wantFire = input.mouseDown || input.mousePressed || input.actionDown('fire') || heavyMelee;
     // A loaded shotgun can interrupt its individual shell loading to fire.
     if (w.shellReload && this.reloading > 0 && wantFire && !this.triggerLatched && this.mag > 0) {
       this.reloading = 0;
@@ -754,6 +817,17 @@ class Player {
 
     /* --- firing ----------------------------------------------------- */
     if (this.fireTimer > 0) this.fireTimer -= dt;
+
+    this.updateMelee(dt);
+    if (this._burstRemaining > 0) {
+      this._burstTimer -= dt;
+      while (this._burstTimer <= 0 && this._burstRemaining > 0) {
+        this._burstRemaining--;
+        if (this.mag > 0 && this.alive) this.shoot(this._burstAimX, this._burstAimZ, true);
+        else this._burstRemaining = 0;
+        this._burstTimer += w.burstInterval || 0.075;
+      }
+    }
 
     /* Smoke vents once the trigger is released, not on every shot: a single
        round should not puff, and a long burst should leave the barrel
@@ -783,7 +857,9 @@ class Player {
     let firing = false;
     // semi-autos latch the trigger until the button is released
     if (wantFire && this.reloading <= 0 && this.fireTimer <= 0 && (w.auto || !this.triggerLatched)) {
-      if (this.mag <= 0) {
+      if (w.fire === 'melee') {
+        this.beginMelee(heavyMelee, aimX, aimZ); this.triggerLatched = true;
+      } else if (this.mag <= 0) {
         if (this.reserve > 0) this.startReload();
         else { sfx.dryFire(); this.fireTimer = 0.4; }
         this.triggerLatched = true;
@@ -802,7 +878,7 @@ class Player {
     }
 
     // auto-reload the moment the magazine runs dry
-    if (this.mag <= 0 && this.reloading <= 0 && this.reserve > 0 && wantFire) this.startReload();
+    if (w.usesAmmo !== false && this.mag <= 0 && this.reloading <= 0 && this.reserve > 0 && wantFire) this.startReload();
 
     this.recoil = damp(this.recoil, 0, 12, dt);
     this.updateModel(dt, movedSpeed, aimX, aimZ);
@@ -827,10 +903,15 @@ class Player {
     return out;
   }
 
-  shoot(aimX, aimZ) {
+  shoot(aimX, aimZ, burstFollowup = false) {
     const g = this.game;
     const w = this.weapon;
-    this.fireTimer = Math.max(-0.04, this.fireTimer) + w.interval;
+    if (w.fire === 'melee') { this.beginMelee(false, aimX, aimZ); return; }
+    if (!burstFollowup) this.fireTimer = Math.max(-0.04, this.fireTimer) + w.interval;
+    if (w.burstCount && !burstFollowup) {
+      this._burstRemaining = w.burstCount - 1; this._burstTimer = w.burstInterval;
+      this._burstAimX = aimX; this._burstAimZ = aimZ;
+    }
     this.mags[w.id] = this.mag - 1;
     this.recoil = w.recoil;
     this.firedThisFrame = true;
@@ -845,31 +926,26 @@ class Player {
     g.shake(w.shake, 0.14, -Math.sin(baseAngle), -Math.cos(baseAngle));
 
     if (w.fire !== 'flame') {
-      sfx.shot(w.sound, 1);
+      sfx.shot(w.sound, w.suppressed ? 0.48 : 1);
+      if (w.projectileKind !== 'bolt') {
       const muzzleColor = w.fire === 'rail' ? 0xdc86ff : w.fire === 'arc' ? 0x69eaff : w.fire === 'projectile' ? 0xffb060 : 0xffd090;
       g.fx.lights.flash(mz.x, mz.y, mz.z, muzzleColor,
-        w.id === 'shotgun' ? 190 : 110, w.id === 'shotgun' ? 15 : 11, 0.07);
+        w.suppressed ? 24 : w.fire === 'spread' ? 150 : 85, w.suppressed ? 5 : 10, 0.065);
       // muzzle flare + smoke
       const fa = baseAngle;
-      g.fx.sparks.emit(mz.x, mz.y, mz.z, Math.sin(fa) * 2, 0.4, Math.cos(fa) * 2,
-        0.05, w.id === 'shotgun' ? 1.5 : 0.9, muzzleColor, 0);
-      for (let i = 0; i < 3; i++) {
-        g.fx.sparks.emit(mz.x, mz.y, mz.z,
-          Math.sin(fa) * (6 + Math.random() * 9) + (Math.random() - 0.5) * 3,
-          (Math.random() - 0.3) * 2,
-          Math.cos(fa) * (6 + Math.random() * 9) + (Math.random() - 0.5) * 3,
-          0.12, 0.24, muzzleColor, 6);
-      }
+      if (g.fx.sparks.muzzle) g.fx.sparks.muzzle(mz.x, mz.y, mz.z, Math.sin(fa), Math.cos(fa), muzzleColor,
+        w.id === 'shotgun' || w.fire === 'rail' || w.fire === 'projectile');
       if (w.id === 'shotgun' || w.fire === 'projectile') {
         g.fx.smoke.emit(mz.x, mz.y, mz.z, Math.sin(fa) * 3, 0.7, Math.cos(fa) * 3,
           0.8, 0.7, 2.4, 0x6a6a70, 0.4);
       }
       // ejected casing
-      if (w.ammo !== 'rocket' && w.ammo !== 'cell' && w.fire !== 'rail') {
+      if (w.ammo !== 'rocket' && w.ammo !== 'cell' && w.ammo !== 'bolt' && w.ammo !== 'grenade' && w.fire !== 'rail') {
         const ea = baseAngle + Math.PI / 2;
         g.fx.gibs.emit(mz.x, mz.y, mz.z,
           Math.sin(ea) * 3 + (Math.random() - 0.5), 3 + Math.random() * 1.5, Math.cos(ea) * 3 + (Math.random() - 0.5),
           w.ammo === 'cannon' ? 0.12 : 0.075, 0xd8b34a, 2.5);
+      }
       }
     }
 
@@ -908,6 +984,55 @@ class Player {
     }
   }
 
+  beginMelee(heavy, aimX, aimZ) {
+    const w = this.weapon;
+    if (w.fire !== 'melee' || this.meleeAttack || this.fireTimer > 0 || !this.alive) return false;
+    const spec = typeof CombatCore !== 'undefined' && CombatCore.meleeStats
+      ? CombatCore.meleeStats(w, heavy) : Object.assign({}, w, heavy ? w.heavy : null);
+    const total = spec.windup + spec.activeTime + spec.recovery;
+    this.fireTimer = total;
+    this.meleeAttack = { id: ++this.meleeSequence, weapon: w, spec, heavy: !!heavy, age: 0, total,
+      angle: Math.atan2(aimX - this.x, aimZ - this.z), hits: new Set(), marked: false };
+    this.game.stats.meleeAttacks = (this.game.stats.meleeAttacks || 0) + 1;
+    return true;
+  }
+
+  updateMelee(dt) {
+    const attack = this.meleeAttack;
+    if (!attack) return;
+    if (!this.alive) { this.meleeAttack = null; return; }
+    const g = this.game, spec = attack.spec, previousAge = attack.age;
+    attack.age += dt; this.angle = attack.angle;
+    const activeEnd = spec.windup + spec.activeTime;
+    if (attack.age >= spec.windup && previousAge < activeEnd) {
+      const dx = Math.sin(attack.angle), dz = Math.cos(attack.angle);
+      if (!attack.marked) {
+        attack.marked = true;
+        if (sfx.melee) sfx.melee('swing', attack.weapon.id, attack.heavy);
+        const cover = this.raycastCover(this.x, this.z, dx, dz, spec.reach);
+        if (cover) this.damageCover(cover, spec.damage * this.damageMultiplier);
+      }
+      const candidates = g.enemies.queryRadius(this.x, this.z, spec.reach + 2, this._radiusHits);
+      for (let i = 0; i < candidates.length && attack.hits.size < spec.maxTargets; i++) {
+        const e = candidates[i], key = e.id === undefined ? e : e.id;
+        if (attack.hits.has(key) || e.state === S_DYING || !(e.hp > 0)) continue;
+        const tx = e.x - this.x, tz = e.z - this.z, distance = Math.hypot(tx, tz);
+        const radius = e.def.radius || 0.4;
+        if (!CombatCore.meleeInArc(this, e, attack.angle, spec.reach, spec.arc, radius)) continue;
+        const invDistance = distance > 0.0001 ? 1 / distance : 0;
+        const hitX = invDistance ? tx * invDistance : dx, hitZ = invDistance ? tz * invDistance : dz;
+        if (this.raycastCover(this.x, this.z, hitX, hitZ, Math.max(0, distance - radius * 0.6))) continue;
+        attack.hits.add(key);
+        const killed = this.dealDamage(e, spec.damage * this.damageMultiplier, hitX, hitZ, spec.knock, 0, attack.weapon);
+        g.onHitConfirm(killed);
+        if (g.fx.sparks.impact) g.fx.sparks.impact(e.x, (e.y || 0) + 0.9, e.z, dx, dz,
+          attack.weapon.id === 'spear' ? 0x8ccbc4 : 0xbfb7a6, true);
+        if (sfx.melee) sfx.melee('hit', attack.weapon.id, attack.heavy);
+      }
+    }
+    if (attack.age >= attack.total) this.meleeAttack = null;
+  }
+
   confirmShotHit() {
     // Accuracy is successful discharges / discharges, including flame ticks.
     // Shotgun pellets, piercing rounds and arc jumps share one confirmation.
@@ -923,6 +1048,8 @@ class Player {
      stream that decides layouts and loot. */
   dealDamage(e, amount, dirX, dirZ, knock, burnDps, w) {
     const g = this.game;
+    e.lastDamageOwnerId = this.id || 'campaign-player';
+    if (burnDps > 0) e.burnOwnerId = this.id || 'campaign-player';
     const chance = w && w.crit ? w.crit * this.critScale : 0;
     const crit = chance > 0 && g.rng() < chance;
     if (crit) amount *= (w.critMult || 2) * this.critPower;
@@ -999,8 +1126,8 @@ class Player {
       this.confirmShotHit();
 
       const hy = e.y + e.def.radius * 0.9;
-      g.fx.sparks.burst(e.x - dx * e.def.radius * 0.5, hy, e.z - dz * e.def.radius * 0.5,
-        5, 6, 0.35, 0.3, e.def.blood, 0.8, 14);
+      if (g.fx.sparks.impact) g.fx.sparks.impact(e.x - dx * e.def.radius * 0.5, hy,
+        e.z - dz * e.def.radius * 0.5, dx, dz, e.def.blood, false);
       g.fx.gibs.emit(e.x, hy, e.z, -dx * 3 + (Math.random() - 0.5) * 3, 3 + Math.random() * 2, -dz * 3 + (Math.random() - 0.5) * 3,
         0.09, e.def.blood, 3);
       sfx.hitFlesh();
@@ -1014,7 +1141,7 @@ class Player {
 
     if (reachesCover && cover) {
       this.damageCover(cover, w.damage * this.damageMultiplier);
-      g.fx.sparks.burst(cover.x, origin.y, cover.z, 4, 5, 0.25, 0.24, 0xffc766, 0.9, 18);
+      if (g.fx.sparks.impact) g.fx.sparks.impact(cover.x, origin.y, cover.z, dx, dz, 0xffc766, true);
       g.fx.smoke.emit(cover.x, origin.y, cover.z, 0, 0.8, 0, 0.5, 0.3, 2, 0x8a8478, 0.3);
       sfx.hitWall();
     }
@@ -1185,6 +1312,21 @@ class Player {
     this.root.rotation.y = this.angle;
     this.silhouette.position.set(this.x, 0, this.z);
     this.silhouette.rotation.y = this.angle;
+    this.selfReadout.position.set(this.x, 0.083, this.z);
+    this.selfReadout.visible = this.alive && this.root.visible && this.game.state !== 'menu';
+    const dashScale = this.dashTimer > 0 ? 1.13 : 1;
+    this.selfBrackets.scale.setScalar(dashScale);
+    this.selfBrackets.material.color.copy(this._selfColor).lerp(this._selfHurtColor, clamp(this.hurtFlash, 0, 1));
+    this.selfBrackets.material.opacity = this.dashTimer > 0 ? 1 : 0.8;
+    this.selfDirection.position.set(Math.sin(this.angle) * 1.02, 0.012, Math.cos(this.angle) * 1.02);
+    this.selfDirection.rotation.y = this.angle;
+    const reloading = this.reloading > 0 && this.reloadTotal > 0;
+    this.reloadTrack.visible = this.reloadFill.visible = reloading;
+    if (reloading) {
+      const progress = clamp(1 - this.reloading / this.reloadTotal, 0.025, 1);
+      this.reloadFill.scale.x = 1.18 * progress;
+      this.reloadFill.position.x = -0.59 + 0.59 * progress;
+    }
 
     // walk cycle
     const swing = Math.sin(this.walkPhase * 2.2) * Math.min(1, movedSpeed / 5) * 0.55;
@@ -1197,6 +1339,8 @@ class Player {
     const pose = this._weaponPoseState;
     pose.aiming = this.aiming;
     pose.recoil = this.recoil;
+    pose.attackProgress = this.game.arena ? this.attackProgress || 0 : this.meleeAttack ? this.meleeAttack.age / this.meleeAttack.total : 0;
+    pose.heavyAttack = this.game.arena ? !!this.attackHeavy : !!(this.meleeAttack && this.meleeAttack.heavy);
     pose.movement = Math.min(1, movedSpeed / 8);
     pose.phase = this.walkPhase;
     pose.bob = bob;

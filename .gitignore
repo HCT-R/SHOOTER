@@ -1,4 +1,10 @@
 node_modules/
+dist/
+.env
+.env.local
 shot.png
 menu.png
 preview-*.png
+perf-report.json
+perf-final-report.json
+perf-presentation-*.json

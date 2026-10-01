@@ -792,16 +792,9 @@ class EnemyManager {
       if (e.state === S_DYING) continue;
       if (ignoreSet && ignoreSet.has(e)) continue;
       const rr = e.def.radius + radiusPad;
-      const ox = ax - e.x, oz = az - e.z;
-      const c = ox * ox + oz * oz - rr * rr;
-      let t = 0;
-      if (c > 0) {
-        const b = ox * dx + oz * dz;
-        const discriminant = b * b - len * len * c;
-        if (discriminant < 0) continue;
-        t = (-b - Math.sqrt(discriminant)) / (len * len);
-        if (t < 0 || t > 1) continue;
-      }
+      const distance = CombatCore.rayCircleHit({ x: ax, z: az }, dx / len, dz / len, len, e, rr);
+      if (distance === null) continue;
+      const t = distance / len;
       if (t < bestT) { bestT = t; best = e; }
     }
     return best ? { enemy: best, t: clamp(bestT, 0, 1) } : null;

@@ -12,6 +12,13 @@ class SfxEngine {
     this._musicTimer = 0;
     this._step = 0;
     this.intensity = 0;
+    this.masterVolume = 0.55;
+    this.sfxVolume = 0.85;
+    this.musicVolume = 0.65;
+    this._voiceEnds = [];
+    this._position = null;
+    this._footSide = 1;
+    this._lastUi = Object.create(null);
   }
 
   /* browsers require a user gesture before audio can start */
@@ -30,36 +37,105 @@ class SfxEngine {
     this.ctx = new AC();
 
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.55;
+    this.master.gain.value = this.masterVolume;
     this.comp = this.ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -16;
-    this.comp.knee.value = 22;
-    this.comp.ratio.value = 8;
+    this.comp.threshold.value = -12;
+    this.comp.knee.value = 18;
+    this.comp.ratio.value = 4.5;
     this.comp.attack.value = 0.003;
-    this.comp.release.value = 0.22;
-    this.master.connect(this.comp);
-    this.comp.connect(this.ctx.destination);
+    this.comp.release.value = 0.12;
+    // Remove inaudible rumble and tame the sharp edge of stacked noise blasts.
+    this.mixLow = this.ctx.createBiquadFilter();
+    this.mixLow.type = 'highpass'; this.mixLow.frequency.value = 28;
+    this.mixHigh = this.ctx.createBiquadFilter();
+    this.mixHigh.type = 'lowpass'; this.mixHigh.frequency.value = 15500;
+    this.master.connect(this.mixLow);
+    this.mixLow.connect(this.mixHigh); this.mixHigh.connect(this.comp);
+    this.outputTrim = this.ctx.createGain();
+    this.outputTrim.gain.value = 0.85;
+    this.comp.connect(this.outputTrim); this.outputTrim.connect(this.ctx.destination);
 
     this.sfxBus = this.ctx.createGain();
-    this.sfxBus.gain.value = 1.0;
+    this.sfxBus.gain.value = this.sfxVolume;
     this.sfxBus.connect(this.master);
 
     this.musicBus = this.ctx.createGain();
     this.musicBus.gain.value = 0.0;
-    this.musicBus.connect(this.master);
+    this.musicLevel = this.ctx.createGain();
+    this.musicLevel.gain.value = this.musicVolume;
+    this.musicDuck = this.ctx.createGain();
+    this.musicDuck.gain.value = 1;
+    this.musicBus.connect(this.musicDuck);
+    this.musicDuck.connect(this.musicLevel); this.musicLevel.connect(this.master);
 
     // a shared reverb tail gives the facility a concrete-corridor feel
     this.verb = this.ctx.createConvolver();
-    this.verb.buffer = this._impulse(1.6, 2.6);
+    this.verb.buffer = this._impulse(0.95, 3.2);
     this.verbGain = this.ctx.createGain();
-    this.verbGain.gain.value = 0.28;
-    this.verb.connect(this.verbGain);
-    this.verbGain.connect(this.master);
+    this.verbGain.gain.value = 0.18;
+    const verbFilter = this.ctx.createBiquadFilter();
+    verbFilter.type = 'highpass'; verbFilter.frequency.value = 280;
+    this.verb.connect(verbFilter); verbFilter.connect(this.verbGain);
+    // Wet effects must obey the same mute/volume as their dry signal.
+    this.verbGain.connect(this.sfxBus);
 
     this.noiseBuf = this._noise(2.0);
   }
 
-  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+  resume() {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      const pending = this.ctx.resume();
+      if (pending && pending.catch) pending.catch(() => {});
+    }
+  }
+
+  _level(value, fallback) {
+    return Number.isFinite(Number(value)) ? Math.max(0, Math.min(1, Number(value))) : fallback;
+  }
+
+  // A scoped position keeps the public effect methods backward compatible.
+  // pan: -1..1; distance: world units (near field is the first four units).
+  at(pan, distance, play) {
+    const previous = this._position;
+    this._position = {
+      pan: Math.max(-1, Math.min(1, Number(pan) || 0)),
+      distance: Math.max(0, Number(distance) || 0)
+    };
+    try { return typeof play === 'function' ? play() : undefined; }
+    finally { this._position = previous; }
+  }
+
+  _route(node, wet, pan) {
+    const position = this._position;
+    const distance = position ? position.distance : 0;
+    const stereo = pan === undefined ? (position ? position.pan : 0) : pan;
+    let output = node;
+    if (distance > 4) {
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.value = Math.max(900, 12500 / (1 + (distance - 4) * 0.08));
+      const gain = this.ctx.createGain();
+      gain.gain.value = 1 / (1 + Math.max(0, distance - 4) * 0.09);
+      output.connect(filter); filter.connect(gain); output = gain;
+    }
+    if (stereo && this.ctx.createStereoPanner) {
+      const panner = this.ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, stereo));
+      output.connect(panner); output = panner;
+    }
+    output.connect(this.sfxBus);
+    if (wet) {
+      const send = this.ctx.createGain(); send.gain.value = wet;
+      output.connect(send); send.connect(this.verb);
+    }
+  }
+
+  _duckMusic(amount, duration) {
+    if (!this.musicDuck) return;
+    const gain = this.musicDuck.gain, now = this.t;
+    gain.cancelScheduledValues(now);
+    gain.setTargetAtTime(amount, now, 0.018);
+    gain.setTargetAtTime(1, now + duration, 0.24);
+  }
 
   _noise(seconds) {
     const n = Math.floor(this.ctx.sampleRate * seconds);
@@ -86,12 +162,18 @@ class SfxEngine {
   get t() { return this.ctx.currentTime; }
 
   /* budget guard: a 40-alien horde must not spawn 200 simultaneous voices */
-  _ok(cost) {
+  _ok(cost, lifetime, priority) {
     cost = cost || 1;
     if (!this.enabled || !this.ctx) return false;
-    if (this.voices > 34) return false;
+    const now = this.t;
+    this._voiceEnds = this._voiceEnds.filter(voice => {
+      if (voice.end > now) return true;
+      this.voices -= voice.cost;
+      return false;
+    });
+    if (this.voices + cost > (priority ? 44 : 36)) return false;
     this.voices += cost;
-    setTimeout(() => { this.voices -= cost; }, 220);
+    this._voiceEnds.push({ cost: cost, end: now + (lifetime || 0.4) });
     return true;
   }
 
@@ -104,12 +186,13 @@ class SfxEngine {
   }
 
   /* ---- weapon fire ------------------------------------------------- */
-  shot(kind, vol) {
+  shot(kind, vol, pan) {
+    if (pan !== undefined) return this.at(pan, 0, () => this.shot(kind, vol));
+    if (['knife', 'machete', 'axe', 'spear', 'hammer'].includes(kind)) { this.melee('swing', kind); return; }
+    if (kind === 'crossbow') { this.boltRelease(vol); return; }
     if (kind === 'plasma') { this.plasma(vol); return; }
     if (kind === 'railgun') { this.railgun(vol); return; }
-    if (!this._ok()) return;
     vol = vol === undefined ? 1 : vol;
-    const t = this.t;
     const table = {
       pistol:  { lo: 240, hi: 1800, dur: 0.16, body: 0.55, crack: 0.9, q: 2 },
       smg:     { lo: 300, hi: 2600, dur: 0.09, body: 0.34, crack: 0.7, q: 3 },
@@ -117,9 +200,21 @@ class SfxEngine {
       shotgun: { lo: 110, hi: 1400, dur: 0.34, body: 0.95, crack: 1.0, q: 1.2 },
       minigun: { lo: 260, hi: 2400, dur: 0.07, body: 0.32, crack: 0.6, q: 3 },
       rocket:  { lo: 90,  hi: 900,  dur: 0.50, body: 1.0,  crack: 0.5, q: 1 },
+      revolver: { lo: 145, hi: 1950, dur: 0.24, body: 0.85, crack: 0.9, q: 1.5 },
+      burstRifle: { lo: 210, hi: 2850, dur: 0.125, body: 0.52, crack: 0.8, q: 2.4 },
+      dmr: { lo: 130, hi: 2150, dur: 0.25, body: 0.78, crack: 1, q: 1.8 },
+      sniper: { lo: 100, hi: 3200, dur: 0.37, body: 0.96, crack: 1.05, q: 1.3 },
+      doubleBarrel: { lo: 83, hi: 1100, dur: 0.39, body: 1, crack: 0.94, q: 1 },
+      autoShotgun: { lo: 135, hi: 1700, dur: 0.21, body: 0.76, crack: 0.82, q: 1.4 },
+      suppressedSmg: { lo: 370, hi: 980, dur: 0.07, body: 0.3, crack: 0.23, q: 2.8 },
+      lmg: { lo: 165, hi: 2050, dur: 0.15, body: 0.63, crack: 0.79, q: 2 },
+      grenadeLauncher: { lo: 75, hi: 540, dur: 0.29, body: 0.84, crack: 0.33, q: 1.2 },
       autocannon: { lo: 130, hi: 1200, dur: 0.23, body: 0.92, crack: 1.1, q: 1.3 }
     };
     const cfg = table[kind] || table.pistol;
+    if (!this._ok(kind === 'rocket' ? 2 : 3, cfg.dur + 0.08)) return;
+    const t = this.t;
+    const pitch = 0.97 + Math.random() * 0.06;
 
     // noise crack through a sweeping band-pass = the "snap" of a muzzle blast
     const n = this.ctx.createBufferSource();
@@ -128,12 +223,11 @@ class SfxEngine {
     const bp = this.ctx.createBiquadFilter();
     bp.type = 'bandpass';
     bp.Q.value = cfg.q;
-    bp.frequency.setValueAtTime(cfg.hi, t);
-    bp.frequency.exponentialRampToValueAtTime(cfg.lo, t + cfg.dur);
+    bp.frequency.setValueAtTime(cfg.hi * pitch, t);
+    bp.frequency.exponentialRampToValueAtTime(cfg.lo * pitch, t + cfg.dur);
     const ng = this.ctx.createGain();
     this._env(ng, t, 0.5 * cfg.crack * vol, 0.001, cfg.dur);
-    n.connect(bp); bp.connect(ng); ng.connect(this.sfxBus);
-    ng.connect(this.verb);
+    n.connect(bp); bp.connect(ng); this._route(ng, 0.7);
     n.start(t); n.stop(t + cfg.dur + 0.05);
 
     // low sine thump = the chest-punch of the round leaving the barrel
@@ -143,7 +237,7 @@ class SfxEngine {
     o.frequency.exponentialRampToValueAtTime(40, t + cfg.dur * 0.9);
     const og = this.ctx.createGain();
     this._env(og, t, 0.5 * cfg.body * vol, 0.002, cfg.dur * 0.9);
-    o.connect(og); og.connect(this.sfxBus);
+    o.connect(og); this._route(og);
     o.start(t); o.stop(t + cfg.dur + 0.05);
 
     // The action and receiver are a separate transient from the muzzle blast.
@@ -159,13 +253,47 @@ class SfxEngine {
       const ag = this.ctx.createGain();
       const at = t + (kind === 'shotgun' ? 0.2 : 0.022);
       this._env(ag, at, (kind === 'shotgun' ? 0.22 : kind === 'autocannon' ? 0.15 : 0.065) * vol, 0.001, 0.045);
-      action.connect(metal); metal.connect(ag); ag.connect(this.sfxBus);
+      action.connect(metal); metal.connect(ag); this._route(ag);
       action.start(at); action.stop(at + 0.075);
     }
   }
 
+  boltRelease(vol = 1) {
+    if (!this._ok(2, 0.32)) return;
+    const t = this.t, string = this.ctx.createOscillator(), g = this.ctx.createGain();
+    string.type = 'triangle'; string.frequency.setValueAtTime(340, t);
+    string.frequency.exponentialRampToValueAtTime(76, t + 0.19);
+    this._env(g, t, 0.23 * vol, 0.001, 0.24); string.connect(g); this._route(g, 0.2);
+    string.start(t); string.stop(t + 0.28);
+    const n = this.ctx.createBufferSource(); n.buffer = this.noiseBuf;
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1900; f.Q.value = 2;
+    const ng = this.ctx.createGain(); this._env(ng, t, 0.1 * vol, 0.001, 0.045);
+    n.connect(f); f.connect(ng); this._route(ng); n.start(t); n.stop(t + 0.07);
+  }
+
+  melee(stage = 'swing', kind = 'knife', heavy = false) {
+    if (!this._ok(2, 0.45, stage === 'hit')) return;
+    const mass = { knife: 0.55, machete: 0.9, axe: 1.25, spear: 0.75, hammer: 1.8 }[kind] || 1;
+    const t = this.t, hit = stage === 'hit', duration = hit ? 0.16 + mass * 0.05 : 0.13 + mass * 0.055;
+    const n = this.ctx.createBufferSource(); n.buffer = this.noiseBuf;
+    n.playbackRate.value = 0.75 + 0.35 / mass;
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = hit ? 1.4 : 0.65;
+    f.frequency.setValueAtTime(hit ? 1900 / mass : 420 / mass, t);
+    f.frequency.exponentialRampToValueAtTime(hit ? 150 : 2400 / mass, t + duration * 0.48);
+    f.frequency.exponentialRampToValueAtTime(170, t + duration);
+    const g = this.ctx.createGain(); this._env(g, t, (hit ? 0.3 : 0.15) * (heavy ? 1.15 : 1), hit ? 0.001 : 0.035, duration);
+    n.connect(f); f.connect(g); this._route(g, hit ? 0.16 : 0.04); n.start(t); n.stop(t + duration + 0.06);
+    if (hit) {
+      const body = this.ctx.createOscillator(), gain = this.ctx.createGain(); body.type = 'sine';
+      body.frequency.setValueAtTime(190 / mass, t); body.frequency.exponentialRampToValueAtTime(45, t + 0.13);
+      this._env(gain, t, 0.18 * mass, 0.002, 0.18); body.connect(gain); this._route(gain);
+      body.start(t); body.stop(t + 0.22);
+    }
+  }
+
   railgun(vol) {
-    if (!this._ok(3)) return;
+    if (!this._ok(3, 0.6)) return;
+    this._duckMusic(0.58, 0.24);
     vol = vol === undefined ? 1 : vol;
     const t = this.t;
     // A fast rising coil transient releases into a low electromagnetic boom.
@@ -176,7 +304,7 @@ class SfxEngine {
     coil.frequency.exponentialRampToValueAtTime(150, t + 0.46);
     const cg = this.ctx.createGain();
     this._env(cg, t, 0.34 * vol, 0.03, 0.46);
-    coil.connect(cg); cg.connect(this.sfxBus); cg.connect(this.verb);
+    coil.connect(cg); this._route(cg, 0.7);
     coil.start(t); coil.stop(t + 0.55);
 
     const sub = this.ctx.createOscillator();
@@ -185,7 +313,7 @@ class SfxEngine {
     sub.frequency.exponentialRampToValueAtTime(28, t + 0.4);
     const sg = this.ctx.createGain();
     this._env(sg, t + 0.025, 0.75 * vol, 0.003, 0.42);
-    sub.connect(sg); sg.connect(this.sfxBus);
+    sub.connect(sg); this._route(sg);
     sub.start(t); sub.stop(t + 0.52);
 
     const snap = this.ctx.createBufferSource();
@@ -196,12 +324,12 @@ class SfxEngine {
     bp.frequency.exponentialRampToValueAtTime(450, t + 0.32);
     const ng = this.ctx.createGain();
     this._env(ng, t + 0.028, 0.6 * vol, 0.001, 0.3);
-    snap.connect(bp); bp.connect(ng); ng.connect(this.sfxBus); ng.connect(this.verb);
+    snap.connect(bp); bp.connect(ng); this._route(ng, 0.7);
     snap.start(t); snap.stop(t + 0.4);
   }
 
   plasma(vol) {
-    if (!this._ok(2)) return;
+    if (!this._ok(3, 0.32)) return;
     vol = vol === undefined ? 1 : vol;
     const t = this.t;
     const carrier = this.ctx.createOscillator();
@@ -217,7 +345,7 @@ class SfxEngine {
     mod.connect(depth); depth.connect(carrier.frequency);
     const gain = this.ctx.createGain();
     this._env(gain, t, 0.32 * vol, 0.003, 0.26);
-    carrier.connect(gain); gain.connect(this.sfxBus); gain.connect(this.verb);
+    carrier.connect(gain); this._route(gain, 0.7);
     carrier.start(t); mod.start(t);
     carrier.stop(t + 0.3); mod.stop(t + 0.3);
 
@@ -227,7 +355,7 @@ class SfxEngine {
     filter.type = 'highpass'; filter.frequency.value = 4400;
     const crack = this.ctx.createGain();
     this._env(crack, t, 0.16 * vol, 0.001, 0.055);
-    noise.connect(filter); filter.connect(crack); crack.connect(this.sfxBus);
+    noise.connect(filter); filter.connect(crack); this._route(crack);
     noise.start(t); noise.stop(t + 0.08);
   }
 
@@ -241,7 +369,7 @@ class SfxEngine {
     o.frequency.setValueAtTime(detonate ? 1700 : 580, t);
     o.frequency.exponentialRampToValueAtTime(detonate ? 95 : 210, t + (detonate ? 0.4 : 0.14));
     this._env(g, t, detonate ? 0.24 : 0.2, 0.002, detonate ? 0.45 : 0.16);
-    o.connect(g); g.connect(this.sfxBus); g.connect(this.verb);
+    o.connect(g); this._route(g, 0.7);
     o.start(t); o.stop(t + 0.55);
     if (!detonate) this.reload('out');
   }
@@ -258,12 +386,15 @@ class SfxEngine {
     bp.frequency.exponentialRampToValueAtTime(350, t + 0.23);
     const g = this.ctx.createGain();
     this._env(g, t, 0.22, 0.025, 0.22);
-    n.connect(bp); bp.connect(g); g.connect(this.sfxBus);
+    n.connect(bp); bp.connect(g); this._route(g);
     n.start(t); n.stop(t + 0.3);
   }
 
-  footstep(vol) {
-    if (!this._ok()) return;
+  footstep(vol, pan) {
+    if (!this._ok(2, 0.12)) return;
+    vol = vol === undefined ? 0.55 : vol;
+    this._footSide *= -1;
+    const stereo = pan === undefined ? (this._position ? this._position.pan : this._footSide * 0.2) : pan;
     const t = this.t;
     const n = this.ctx.createBufferSource();
     n.buffer = this.noiseBuf;
@@ -272,8 +403,19 @@ class SfxEngine {
     lp.type = 'lowpass'; lp.frequency.value = 550;
     const g = this.ctx.createGain();
     this._env(g, t, 0.12 * vol, 0.001, 0.055);
-    n.connect(lp); lp.connect(g); g.connect(this.sfxBus);
+    n.connect(lp); lp.connect(g);
+    this._route(g, 0.08, stereo);
     n.start(t); n.stop(t + 0.08);
+
+    // A softer sole scrape follows the heel so walking reads as movement.
+    const scrape = this.ctx.createBufferSource(); scrape.buffer = this.noiseBuf;
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass'; band.frequency.value = 1200; band.Q.value = 0.6;
+    const sg = this.ctx.createGain();
+    this._env(sg, t + 0.018, 0.025 * vol, 0.01, 0.065);
+    scrape.connect(band); band.connect(sg);
+    this._route(sg, 0, stereo);
+    scrape.start(t + 0.018); scrape.stop(t + 0.11);
   }
 
   /* one continuous looping voice rather than a shot per tick */
@@ -289,7 +431,7 @@ class SfxEngine {
       hp.type = 'highpass'; hp.frequency.value = 120;
       const g = this.ctx.createGain();
       g.gain.value = 0;
-      n.connect(lp); lp.connect(hp); hp.connect(g); g.connect(this.sfxBus);
+      n.connect(lp); lp.connect(hp); hp.connect(g); this._route(g);
       n.start();
       this._flameNode = { n: n, g: g, lp: lp };
     }
@@ -308,7 +450,7 @@ class SfxEngine {
       const lp = this.ctx.createBiquadFilter();
       lp.type = 'lowpass'; lp.frequency.value = 700;
       const g = this.ctx.createGain(); g.gain.value = 0;
-      o.connect(lp); lp.connect(g); g.connect(this.sfxBus);
+      o.connect(lp); lp.connect(g); this._route(g);
       o.start();
       this._spinNode = { o: o, g: g };
     }
@@ -327,14 +469,15 @@ class SfxEngine {
     hp.type = 'highpass'; hp.frequency.value = 2200;
     const g = this.ctx.createGain();
     this._env(g, t, 0.16, 0.001, 0.045);
-    n.connect(hp); hp.connect(g); g.connect(this.sfxBus);
+    n.connect(hp); hp.connect(g); this._route(g);
     n.start(t); n.stop(t + 0.1);
   }
 
-  reload(stage) {
+  reload(stage, kind) {
     if (!this._ok()) return;
     const t = this.t;
-    const f = stage === 'out' ? 1500 : stage === 'in' ? 900 : 2600;
+    const weight = kind === 'cylinder' || kind === 'revolver' ? 1.3 : kind === 'belt' || kind === 'lmg' ? 0.65 : kind === 'bolt' || kind === 'crossbow' ? 1.65 : kind === 'break' || kind === 'doubleBarrel' ? 0.8 : 1;
+    const f = (stage === 'out' ? 1500 : stage === 'in' ? 900 : 2600) * weight;
     const o = this.ctx.createOscillator();
     o.type = 'square';
     o.frequency.setValueAtTime(f, t);
@@ -343,7 +486,7 @@ class SfxEngine {
     this._env(g, t, 0.09, 0.001, 0.07);
     const bp = this.ctx.createBiquadFilter();
     bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 6;
-    o.connect(bp); bp.connect(g); g.connect(this.sfxBus);
+    o.connect(bp); bp.connect(g); this._route(g);
     o.start(t); o.stop(t + 0.12);
   }
 
@@ -360,7 +503,7 @@ class SfxEngine {
     lp.frequency.exponentialRampToValueAtTime(220, t + 0.12);
     const g = this.ctx.createGain();
     this._env(g, t, 0.2, 0.002, 0.11);
-    n.connect(lp); lp.connect(g); g.connect(this.sfxBus);
+    n.connect(lp); lp.connect(g); this._route(g);
     n.start(t); n.stop(t + 0.2);
   }
 
@@ -376,7 +519,7 @@ class SfxEngine {
     bp.Q.value = 4;
     const g = this.ctx.createGain();
     this._env(g, t, 0.12, 0.001, 0.07);
-    n.connect(bp); bp.connect(g); g.connect(this.sfxBus);
+    n.connect(bp); bp.connect(g); this._route(g);
     n.start(t); n.stop(t + 0.12);
   }
 
@@ -392,13 +535,14 @@ class SfxEngine {
     lp.frequency.exponentialRampToValueAtTime(180, t + 0.3);
     const g = this.ctx.createGain();
     this._env(g, t, 0.34, 0.003, 0.3);
-    n.connect(lp); lp.connect(g); g.connect(this.sfxBus); g.connect(this.verb);
+    n.connect(lp); lp.connect(g); this._route(g, 0.7);
     n.start(t); n.stop(t + 0.4);
   }
 
   explode(power) {
-    if (!this._ok(3)) return;
-    power = power === undefined ? 1 : power;
+    power = power === undefined ? 1 : Math.max(0.15, Math.min(2, Number(power) || 1));
+    if (!this._ok(3, 1.2 * power)) return;
+    this._duckMusic(0.45, 0.2 + power * 0.15);
     const t = this.t;
     const n = this.ctx.createBufferSource();
     n.buffer = this.noiseBuf;
@@ -409,7 +553,7 @@ class SfxEngine {
     lp.frequency.exponentialRampToValueAtTime(90, t + 0.9 * power);
     const g = this.ctx.createGain();
     this._env(g, t, 0.85 * power, 0.004, 0.95 * power);
-    n.connect(lp); lp.connect(g); g.connect(this.sfxBus); g.connect(this.verb);
+    n.connect(lp); lp.connect(g); this._route(g, 0.7);
     n.start(t); n.stop(t + 1.2 * power);
 
     const o = this.ctx.createOscillator();
@@ -418,13 +562,13 @@ class SfxEngine {
     o.frequency.exponentialRampToValueAtTime(28, t + 0.6 * power);
     const og = this.ctx.createGain();
     this._env(og, t, 0.95 * power, 0.005, 0.7 * power);
-    o.connect(og); og.connect(this.sfxBus);
+    o.connect(og); this._route(og);
     o.start(t); o.stop(t + 0.9 * power);
   }
 
   /* ---- creatures ---------------------------------------------------- */
   screech(pitch, vol) {
-    if (!this._ok()) return;
+    if (!this._ok(3, 0.55)) return;
     pitch = pitch === undefined ? 1 : pitch;
     vol = vol === undefined ? 1 : vol;
     const t = this.t;
@@ -456,7 +600,7 @@ class SfxEngine {
 
     const g = this.ctx.createGain();
     this._env(g, t, 0.16 * vol, 0.012, dur);
-    o.connect(bp); o2.connect(bp); bp.connect(g); g.connect(this.sfxBus); g.connect(this.verb);
+    o.connect(bp); o2.connect(bp); bp.connect(g); this._route(g, 0.7);
     o.start(t); o2.start(t); lfo.start(t);
     o.stop(t + dur + 0.05); o2.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05);
   }
@@ -472,7 +616,7 @@ class SfxEngine {
     this._env(g, t, 0.14, 0.004, 0.18);
     const lp = this.ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = 1400;
-    o.connect(lp); lp.connect(g); g.connect(this.sfxBus);
+    o.connect(lp); lp.connect(g); this._route(g);
     o.start(t); o.stop(t + 0.25);
   }
 
@@ -486,13 +630,11 @@ class SfxEngine {
     o.frequency.exponentialRampToValueAtTime(90, t + 0.22);
     const g = this.ctx.createGain();
     this._env(g, t, 0.3, 0.004, 0.22);
-    o.connect(g); g.connect(this.sfxBus);
+    o.connect(g); this._route(g);
     o.start(t); o.stop(t + 0.3);
   }
 
   pickup(kind) {
-    if (!this._ok()) return;
-    const t = this.t;
     const table = {
       ammo: [660, 990],
       health: [523, 784, 1046],
@@ -501,6 +643,8 @@ class SfxEngine {
       weapon: [392, 523, 659, 880]
     };
     const notes = table[kind] || table.ammo;
+    if (!this._ok(notes.length, notes.length * 0.055 + 0.16, true)) return;
+    const t = this.t;
     for (let i = 0; i < notes.length; i++) {
       const o = this.ctx.createOscillator();
       o.type = 'triangle';
@@ -508,35 +652,79 @@ class SfxEngine {
       const g = this.ctx.createGain();
       const tt = t + i * 0.055;
       this._env(g, tt, 0.14, 0.004, 0.1);
-      o.connect(g); g.connect(this.sfxBus);
+      o.connect(g); this._route(g);
       o.start(tt); o.stop(tt + 0.16);
     }
   }
 
+  _tones(notes, options) {
+    const cfg = Object.assign({ gap: 0.06, decay: 0.13, level: 0.09, wave: 'triangle', wet: 0.1 }, options);
+    const duration = notes.length * cfg.gap + cfg.decay;
+    if (!this._ok(notes.length, duration, true)) return;
+    const now = this.t;
+    for (let i = 0; i < notes.length; i++) {
+      const when = now + i * cfg.gap;
+      const o = this.ctx.createOscillator();
+      o.type = cfg.wave; o.frequency.value = notes[i];
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 3600;
+      const gain = this.ctx.createGain();
+      this._env(gain, when, cfg.level, 0.005, cfg.decay);
+      o.connect(lp); lp.connect(gain);
+      this._route(gain, cfg.wet, notes.length > 1 ? (i / (notes.length - 1) - 0.5) * 0.28 : 0);
+      o.start(when); o.stop(when + cfg.decay + 0.03);
+    }
+  }
+
   ui(kind) {
-    if (!this._ok()) return;
-    const t = this.t;
-    const f = kind === 'tick' ? 1200 : kind === 'wave' ? 180 : kind === 'crit' ? 1560 : 520;
-    const o = this.ctx.createOscillator();
-    o.type = kind === 'wave' ? 'sawtooth' : 'square';
-    o.frequency.setValueAtTime(f, t);
-    if (kind === 'wave') o.frequency.exponentialRampToValueAtTime(70, t + 0.7);
-    // a crit is a rising ping so it cuts through sustained weapon fire
-    if (kind === 'crit') o.frequency.exponentialRampToValueAtTime(2600, t + 0.05);
-    const g = this.ctx.createGain();
-    this._env(g, t, kind === 'wave' ? 0.24 : kind === 'crit' ? 0.09 : 0.07, 0.004,
-      kind === 'wave' ? 0.7 : kind === 'crit' ? 0.09 : 0.06);
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = kind === 'wave' ? 700 : kind === 'crit' ? 7000 : 4000;
-    o.connect(lp); lp.connect(g); g.connect(this.sfxBus);
-    if (kind === 'wave') g.connect(this.verb);
-    o.start(t); o.stop(t + 0.9);
+    if (!this.enabled || !this.ctx) return;
+    kind = kind || 'select';
+    const cooldown = kind === 'hover' ? 0.055 : kind === 'wave' ? 0.35 : 0.025;
+    if (this._lastUi[kind] !== undefined && this.t - this._lastUi[kind] < cooldown) return;
+    this._lastUi[kind] = this.t;
+    switch (kind) {
+      case 'hover': this._tones([1046], { decay: 0.035, level: 0.025, wave: 'sine', wet: 0 }); break;
+      case 'tick': this._tones([1174], { decay: 0.055, level: 0.045, wet: 0 }); break;
+      case 'back': this._tones([587, 392], { gap: 0.06, decay: 0.085, level: 0.07 }); break;
+      case 'error': this._tones([220, 196], { gap: 0.1, decay: 0.1, level: 0.1, wet: 0 }); break;
+      case 'crit': this._tones([1568, 2093], { gap: 0.018, decay: 0.06, level: 0.065, wave: 'sine', wet: 0 }); break;
+      case 'wave':
+        this._tones([146.83, 220, 293.66], { gap: 0.14, decay: 0.32, level: 0.18, wet: 0.6 });
+        this._duckMusic(0.6, 0.42);
+        break;
+      default: this._tones([392, 587, 784], { gap: 0.045, decay: 0.12, level: 0.075 }); break;
+    }
+  }
+
+  // Short, distinct match cues also work in offline/file:// builds.
+  match(kind) {
+    if (!this.enabled || !this.ctx) return;
+    switch (kind) {
+      case 'victory':
+        this._tones([392, 523.25, 659.25, 784, 1046.5], { gap: 0.1, decay: 0.4, level: 0.16, wet: 0.6 });
+        break;
+      case 'defeat':
+        this._tones([392, 329.63, 293.66, 146.83], { gap: 0.16, decay: 0.48, level: 0.14, wet: 0.5 });
+        break;
+      case 'zone':
+        this._tones([659.25, 493.88, 659.25], { gap: 0.14, decay: 0.13, level: 0.12, wet: 0 });
+        break;
+      case 'countdown':
+        this._tones([880], { decay: 0.12, level: 0.11, wave: 'sine', wet: 0 });
+        break;
+      default:
+        this._tones([293.66, 440, 587.33, 880], { gap: 0.09, decay: 0.3, level: 0.15, wet: 0.4 });
+        break;
+    }
+    this._duckMusic(0.48, kind === 'countdown' ? 0.15 : 0.65);
   }
 
   /* ---- generative score --------------------------------------------- */
   /* a 16-step pulse whose density and brightness track combat intensity */
   updateMusic(dt, intensity) {
     if (!this.ctx) return;
+    dt = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    intensity = this._level(intensity, 0);
     if (!this.musicOn) {
       this.musicBus.gain.setTargetAtTime(0, this.t, 0.4);
       return;
@@ -624,7 +812,20 @@ class SfxEngine {
     }
   }
 
-  setMaster(v) { if (this.master) this.master.gain.value = v; }
+  setMaster(v) {
+    this.masterVolume = this._level(v, this.masterVolume);
+    if (this.master) this.master.gain.setTargetAtTime(this.masterVolume, this.t, 0.04);
+  }
+
+  setSfx(v) {
+    this.sfxVolume = this._level(v, this.sfxVolume);
+    if (this.sfxBus) this.sfxBus.gain.setTargetAtTime(this.sfxVolume, this.t, 0.04);
+  }
+
+  setMusic(v) {
+    this.musicVolume = this._level(v, this.musicVolume);
+    if (this.musicLevel) this.musicLevel.gain.setTargetAtTime(this.musicVolume, this.t, 0.06);
+  }
 }
 
 const sfx = new SfxEngine();

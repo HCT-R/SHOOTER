@@ -13,7 +13,7 @@ let checks = 0;
 function equal(actual, expected, message) { checks++; assert.strictEqual(actual, expected, message); }
 function ok(condition, message) { checks++; assert(condition, message); }
 function profile(settings = {}, best = 0, appearance = null, records = {}) {
-  return JSON.stringify({ schemaVersion: 2, settings, appearance,
+  return JSON.stringify({ schemaVersion: 3, settings, appearance,
     records: Object.assign({ best }, records) });
 }
 // the shape players on the previous release actually have on disk
@@ -36,7 +36,7 @@ function boot(disk, denyAccess = false) {
   Object.defineProperty(window, 'localStorage', { get() { if (denyAccess) throw Error('SecurityError'); return disk; } });
   const context = vm.createContext({ window, console });
   vm.runInContext(source, context);
-  return vm.runInContext('({ store, createProfileStore, parseProfileBoolean, clampLook, loadLook, saveLook, randomLook, ' +
+  return vm.runInContext('({ store, createProfileStore, normalizeCampaignProgress, parseProfileBoolean, clampLook, loadLook, saveLook, randomLook, ' +
     'LOOK_PRESETS, META_UPGRADES, META_BY_ID, metaCost, clampMetaRanks, metaInvested })', context);
 }
 
@@ -50,9 +50,9 @@ function boot(disk, denyAccess = false) {
   equal(s.get('as3d_music', '1'), '0');
   equal(s.get('pixel_protocol_volume', '55'), '0');
   equal(s.get('motion', ''), '0');
-  equal(s.get('pixels', '2'), '4');
+  equal(s.get('pixels', '2'), '2');
   const saved = JSON.parse(disk.data.get(KEY));
-  equal(saved.schemaVersion, 2);
+  equal(saved.schemaVersion, 3);
   equal(saved.settings.music, false);
   equal(saved.settings.motion, false);
   equal(saved.settings.volume, 0);
@@ -133,7 +133,7 @@ function boot(disk, denyAccess = false) {
     ['music', '0', '0'], ['music', '1', '1'],
     ['motion', '0', '0'], ['motion', '1', '1'],
     ['dmgnum', '0', '0'], ['dmgnum', '1', '1'],
-    ['volume', 40, '40'], ['pixels', 3, '3']
+    ['volume', 40, '40'], ['quality', 'high', 'high'], ['sfxVolume', 80, '80'], ['musicVolume', 35, '35'], ['botDifficulty', 'hard', 'hard'], ['loadout', 'weapon:suppressedSmg', 'weapon:suppressedSmg']
   ];
   for (const [key, write, read] of settings) {
     equal(s.set(key, write), true, key + ' could not be written');
@@ -227,7 +227,7 @@ for (const original of ['{broken-json', JSON.stringify({ schemaVersion: 9, futur
   const disk = storage({ [KEY]: original }), s = boot(disk).store;
   equal(s.get('music', '1'), '1');
   equal(s.get('motion', '1'), '0');
-  equal(s.get('pixels', '2'), '4');
+  equal(s.get('pixels', '2'), '2');
   equal(s.status().reason, 'invalid-fields-recovered');
   equal(disk.data.get(KEY), original, 'loading silently replaced malformed data');
   equal(s.set('best', 300), true);
@@ -250,7 +250,7 @@ for (const original of ['{broken-json', JSON.stringify({ schemaVersion: 9, futur
   equal(latest.get('best'), '500');
 }
 
-/* Schema 1 -> 2. This is the case that costs real players their profile if it
+/* Schema 1 -> 2 -> 3. This is the case that costs real players their profile if it
    regresses: everything they had must survive, and the upgrade must be
    reported as an upgrade rather than as damage. */
 {
@@ -260,9 +260,9 @@ for (const original of ['{broken-json', JSON.stringify({ schemaVersion: 9, futur
   equal(s.get('best', '0'), '1234', 'migration lost the high score');
   equal(s.get('volume', '55'), '41', 'migration lost a setting');
   equal(s.get('music', '1'), '0', 'migration lost a boolean setting');
-  equal(s.get('pixels', '2'), '3');
+  equal(s.get('pixels', '2'), '2');
   equal(JSON.parse(s.get('look', '{}')).nickname, 'Вектор-12', 'migration lost the callsign');
-  equal(s.status().schemaVersion, 2);
+  equal(s.status().schemaVersion, 3);
   equal(s.status().persistence, 'persistent', 'an upgradable profile was not treated as usable');
   equal(s.status().reason, 'schema-migrated', 'migration was reported as corruption');
   // new fields default rather than appearing as undefined
@@ -274,7 +274,7 @@ for (const original of ['{broken-json', JSON.stringify({ schemaVersion: 9, futur
   equal(s.set('samples', 25), true);
   equal(disk.data.get(BACKUP), original, 'the pre-migration profile was not backed up');
   const saved = JSON.parse(disk.data.get(KEY));
-  equal(saved.schemaVersion, 2);
+  equal(saved.schemaVersion, 3);
   equal(saved.records.samples, 25);
   equal(saved.records.best, 1234);
   equal(saved.appearance.nickname, 'Вектор-12');
@@ -371,7 +371,7 @@ for (const original of ['{broken-json', JSON.stringify({ schemaVersion: 9, futur
   for (const bad of ['{broken', 'null', '[]', 7]) equal(s.set('meta', bad), false, 'accepted bad ranks: ' + String(bad));
   equal(JSON.parse(s.get('meta', '{}'))[first], 1, 'a rejected write changed stored ranks');
   // a save edited by hand is clamped when it is read back, not trusted
-  disk.data.set(KEY, JSON.stringify({ schemaVersion: 2, settings: {}, appearance: null,
+  disk.data.set(KEY, JSON.stringify({ schemaVersion: 3, settings: {}, appearance: null,
     records: { best: 0 }, progression: { [first]: 9999, ghostUpgrade: 3 } }));
   const reread = boot(disk).store, ranks = JSON.parse(reread.get('meta', '{}'));
   equal(ranks[first], META_UPGRADES[0].max, 'a tampered rank was not clamped on load');
@@ -388,4 +388,44 @@ for (const original of ['{broken-json', JSON.stringify({ schemaVersion: 9, futur
   equal(s.get('best', '0'), '77');
 }
 
-console.log('RESULT_OK save/profile: ' + checks + ' assertions; legacy keys, schema 1-to-2 chain, spendable samples, clamped station ranks, strict booleans, presets, memory fallback, backup/recovery, future/unmigratable schemas, multi-tab merge');
+// Schema2 keeps identity, records, progression and audio; only the removed
+// pixel preference disappears. The backup retains the exact original bytes.
+{
+  const original = JSON.stringify({schemaVersion:2,settings:{pixels:6,volume:29,sfxVolume:73,quality:'high'},appearance:{nickname:'ARCHIVE'},
+    records:{best:930,samples:144,runs:8},progression:{},controls:{}});
+  const disk=storage({[KEY]:original}),s=boot(disk).store;
+  equal(s.status().schemaVersion,3);equal(s.status().reason,'schema-migrated');
+  equal(s.get('best'),'930');equal(s.get('samples'),'144');equal(s.get('runs'),'8');
+  equal(s.get('sfxVolume'),'73');equal(s.get('quality'),'high');equal(s.get('pixels','removed'),'removed');
+  equal(JSON.parse(s.get('look')).nickname,'ARCHIVE');equal(s.set('musicVolume',22),true);
+  equal(disk.data.get(BACKUP),original);equal(JSON.parse(disk.data.get(KEY)).settings.pixels,undefined);
+}
+
+// Safe stage checkpoints preserve carried weapons, melee selection, ammo and
+// build while rejecting corrupt boundaries and clamping untrusted counters.
+{
+  const disk=storage(),api=boot(disk),s=api.store;
+  const campaign={unlocked:3,completed:[1,2],logs:['archive-a'],checkpoint:{missionId:3,stageIndex:5,seed:3107,money:200,score:300,time:80,sampleYield:16,
+    perks:{overcharge:2},upgrades:{damage:1},stats:{kills:14},player:{hp:72,maxHp:125,armor:13,maxArmor:100,owned:['pistol','knife','suppressedSmg','spear'],
+      weaponId:'suppressedSmg',meleeId:'spear',ammo:{light:120},mags:{suppressedSmg:21},bonuses:{damageMultiplier:1.44,burnChains:1}}}};
+  equal(s.set('campaign',campaign),true);
+  const restored=JSON.parse(boot(disk).store.get('campaign'));
+  equal(restored.checkpoint.stageIndex,5);equal(restored.checkpoint.seed,3107);equal(restored.checkpoint.player.weaponId,'suppressedSmg');
+  equal(restored.checkpoint.player.meleeId,'spear');equal(restored.checkpoint.player.mags.suppressedSmg,21);equal(restored.checkpoint.player.bonuses.burnChains,1);
+  equal(restored.completed.join(','),'1,2');equal(restored.logs.join(','),'archive-a');
+  for(const bad of [null,[],3,'{broken'])equal(s.set('campaign',bad),false);
+  for(const patch of [{missionId:7},{stageIndex:-1},{stageIndex:1.1},{seed:-1},{seed:0x100000000}]){
+    const clean=api.normalizeCampaignProgress({...campaign,checkpoint:{...campaign.checkpoint,...patch}});equal(clean.checkpoint,null,'invalid checkpoint accepted');
+  }
+  const clean=api.normalizeCampaignProgress({...campaign,checkpoint:{...campaign.checkpoint,money:1e50,player:{...campaign.checkpoint.player,hp:-4,ammo:{light:Infinity,heavy:1e9},bonuses:JSON.parse('{"__proto__":9,"constructor":8,"damageMultiplier":2}')}}});
+  equal(clean.checkpoint.money,1000000);equal(clean.checkpoint.player.hp,1);equal(clean.checkpoint.player.ammo.light,undefined);
+  equal(clean.checkpoint.player.ammo.heavy,10000);ok(!Object.prototype.hasOwnProperty.call(clean.checkpoint.player.bonuses,'constructor'));
+  const a=boot(disk).store,b=boot(disk).store;a.get('campaign');b.get('campaign');
+  a.set('campaign',{unlocked:5,completed:[1,2,3,4],logs:['archive-a','archive-b'],checkpoint:null});
+  b.set('campaign',{unlocked:3,completed:[1,2],logs:['archive-c'],checkpoint:campaign.checkpoint});
+  const merged=JSON.parse(boot(disk).store.get('campaign'));equal(merged.unlocked,5);equal(merged.completed.join(','),'1,2,3,4');
+  ok(['archive-a','archive-b','archive-c'].every(id=>merged.logs.includes(id)),'stale tab erased journals');
+  equal(merged.checkpoint.missionId,3,'latest checkpoint choice did not persist');
+}
+
+console.log('RESULT_OK save/profile: ' + checks + ' assertions; schema 1-to-3 chain, removed pixel preference, campaign checkpoints/builds/unlocks, strict fields, backup/recovery, multi-tab merge');

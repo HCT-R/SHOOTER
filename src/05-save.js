@@ -1,10 +1,10 @@
 /* Versioned, browser-local profile. Legacy keys remain untouched.
-   Holds settings, appearance, records and meta-progression. No active run
-   and no Steam Cloud data is stored here. */
+   Holds settings, appearance, records, meta-progression and safe campaign
+   checkpoints. No Steam Cloud data is stored here. */
 const PROFILE_KEY = 'pixel_protocol_profile';
 const PROFILE_BACKUP_KEY = PROFILE_KEY + '_backup';
 const PROFILE_RECOVERY_KEY = PROFILE_KEY + '_recovery';
-const PROFILE_SCHEMA_VERSION = 2;
+const PROFILE_SCHEMA_VERSION = 3;
 
 /* Upgrade steps, applied in order: each takes the parsed object at version n
    and returns it at version n + 1. A step only has to move or reinterpret
@@ -14,8 +14,49 @@ const PROFILE_SCHEMA_VERSION = 2;
    a player's profile, so the chain must stay complete forever. */
 const PROFILE_MIGRATIONS = {
   // 1 -> 2: meta-progression added; samples and runs simply default to zero
-  1: (value) => { value.schemaVersion = 2; return value; }
+  1: (value) => { value.schemaVersion = 2; return value; },
+  // Smooth 3D replaces the removed presentation preference. Campaign saves
+  // begin at safe stage boundaries; all existing account progression stays.
+  2: (value) => {
+    if (value.settings && typeof value.settings === 'object') delete value.settings.pixels;
+    value.schemaVersion = 3;
+    return value;
+  }
 };
+
+function normalizeCampaignProgress(value) {
+  if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { return undefined; } }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const finite = (v, lo, hi, fallback = lo) => Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : fallback;
+  const id = v => Math.floor(finite(v, 1, 6));
+  const dict = (source, limit = 100000) => {
+    const out = {};
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return out;
+    for (const key of Object.keys(source).slice(0, 64)) {
+      if (!/^[a-z][a-zA-Z0-9_]{0,31}$/.test(key) || ['constructor', 'prototype', '__proto__'].includes(key)) continue;
+      const number = Number(source[key]);
+      if (Number.isFinite(number) && number >= 0) out[key] = Math.min(limit, number);
+    }
+    return out;
+  };
+  const completed = Array.isArray(value.completed) ? [...new Set(value.completed.filter(v => Number.isInteger(v) && v >= 1 && v <= 6))].sort((a, b) => a - b) : [];
+  const result = { unlocked: Math.max(id(value.unlocked || 1), Math.min(6, Math.max(0, ...completed) + 1)), completed,
+    logs: Array.isArray(value.logs) ? [...new Set(value.logs.filter(v => typeof v === 'string' && /^[a-z0-9_-]{1,40}$/.test(v)))].slice(0, 36) : [], checkpoint: null };
+  const c = value.checkpoint;
+  if (c && typeof c === 'object' && !Array.isArray(c) && Number.isInteger(c.missionId) && c.missionId >= 1 && c.missionId <= result.unlocked &&
+      Number.isInteger(c.stageIndex) && c.stageIndex >= 0 && c.stageIndex <= 15 && Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 0xffffffff) {
+    const p = c.player && typeof c.player === 'object' ? c.player : {};
+    const owned = Array.isArray(p.owned) ? [...new Set(p.owned.filter(v => typeof v === 'string' && /^[a-z][a-zA-Z0-9_]{0,31}$/.test(v)))].slice(0, 32) : ['pistol', 'smg'];
+    result.checkpoint = { missionId: c.missionId, stageIndex: c.stageIndex, seed: c.seed,
+      money: finite(c.money, 0, 1000000), score: finite(c.score, 0, 100000000), time: finite(c.time, 0, 100000),
+      sampleYield: finite(c.sampleYield, 0, 100000), perks: dict(c.perks, 20), upgrades: dict(c.upgrades, 100), stats: dict(c.stats, 10000000),
+      player: { hp: finite(p.hp, 1, 2000, 100), maxHp: finite(p.maxHp, 1, 2000, 100), armor: finite(p.armor, 0, 2000),
+        maxArmor: finite(p.maxArmor, 1, 2000, 100), owned, weaponId: owned.includes(p.weaponId) ? p.weaponId : owned[0] || 'pistol',
+        meleeId: owned.includes(p.meleeId) ? p.meleeId : 'knife',
+        ammo: dict(p.ammo, 10000), mags: dict(p.mags, 1000), bonuses: dict(p.bonuses, 100) } };
+  }
+  return result;
+}
 
 function parseProfileBoolean(value, fallback) {
   if (value === true || value === 1) return true;
@@ -30,7 +71,7 @@ function parseProfileBoolean(value, fallback) {
 
 function createProfileStore(storageProvider, appearanceNormalizer) {
   const provideStorage = storageProvider || (() => window.localStorage);
-  const keys = ['look', 'meta', 'binds', 'best', 'samples', 'runs', 'music', 'volume', 'motion', 'pixels', 'dmgnum'];
+  const keys = ['look', 'meta', 'binds', 'campaign', 'best', 'samples', 'runs', 'music', 'volume', 'motion', 'dmgnum', 'sfxVolume', 'musicVolume', 'quality', 'mode', 'botDifficulty', 'loadout'];
   /* Settings that are strictly true or false. The list is shared by the
      validator and the reader on purpose: they used to be two separate
      conditions, and a key added to one but not the other is silently
@@ -103,6 +144,7 @@ function createProfileStore(storageProvider, appearanceNormalizer) {
     return typeof clampBinds === 'function' ? clampBinds(value) : copy(value);
   };
   const normalize = (key, value) => {
+    if (key === 'campaign') return normalizeCampaignProgress(value);
     if (key === 'binds') return binds(value);
     if (key === 'meta') return meta(value);
     if (key === 'look') {
@@ -112,17 +154,30 @@ function createProfileStore(storageProvider, appearanceNormalizer) {
       return appearance(value);
     }
     if (BOOLEAN_KEYS.indexOf(key) >= 0) return parseProfileBoolean(value, undefined);
+    if (key === 'quality') return ['low', 'balanced', 'high'].includes(value) ? value : undefined;
+    if (key === 'mode') return ['campaign', 'duel', 'ffa', 'royale'].includes(value) ? value : undefined;
+    if (key === 'botDifficulty') return ['easy', 'normal', 'hard'].includes(value) ? value : undefined;
+    if (key === 'loadout') return typeof value === 'string' && /^(?:assault|scout|heavy|specialist|weapon:[a-z][a-zA-Z0-9_]{0,31})$/.test(value) ? value : undefined;
     const n = number(value);
     if (n === undefined) return undefined;
     if (key === 'best' || key === 'samples' || key === 'runs') {
       return n >= 0 && n <= Number.MAX_SAFE_INTEGER ? Math.floor(n) : undefined;
     }
-    if (key === 'volume') return n >= 0 && n <= 100 ? n : undefined;
-    if (key === 'pixels') return [0, 2, 3, 4, 6].indexOf(n) >= 0 ? n : undefined;
+    if (key === 'volume' || key === 'sfxVolume' || key === 'musicVolume') return n >= 0 && n <= 100 ? n : undefined;
     return undefined;
   };
   const apply = (target, key, value) => {
-    if (key === 'look') target.appearance = copy(value);
+    if (key === 'campaign') {
+      const previous = target.settings.campaign;
+      const incoming = copy(value);
+      if (previous) {
+        incoming.unlocked = Math.max(previous.unlocked, incoming.unlocked);
+        incoming.completed = [...new Set(previous.completed.concat(incoming.completed))].sort((a,b) => a-b);
+        incoming.logs = [...new Set(previous.logs.concat(incoming.logs))].slice(0,36);
+      }
+      target.settings.campaign = incoming;
+    }
+    else if (key === 'look') target.appearance = copy(value);
     else if (key === 'meta') target.progression = copy(value);
     else if (key === 'binds') target.controls = copy(value);
     // records that only ever climb merge with max, so a stale tab cannot roll
@@ -279,7 +334,7 @@ function createProfileStore(storageProvider, appearanceNormalizer) {
       if (!name) return fallback;
       const value = readValue(profile, name);
       if (value === undefined || value === null) return fallback;
-      if (name === 'look' || name === 'meta' || name === 'binds') return JSON.stringify(value);
+      if (name === 'look' || name === 'meta' || name === 'binds' || name === 'campaign') return JSON.stringify(value);
       if (BOOLEAN_KEYS.indexOf(name) >= 0) return value ? '1' : '0';
       return String(value);
     },

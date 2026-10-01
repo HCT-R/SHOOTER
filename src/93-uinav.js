@@ -27,6 +27,10 @@ const NAV_SELECTOR =
    what the pad's B button presses; a screen without one cannot be dismissed,
    which is exactly right for the doctrine pick. */
 const NAV_SCREENS = [
+  { id: 'arenaResults', first: '#btnArenaRetry', back: 'btnArenaMenu' },
+  { id: 'campaignComplete', first: '#campaignNextBtn', back: 'campaignMenuBtn' },
+  { id: 'campaignFailed', first: '#checkpointRetryBtn', back: 'campaignFailedMenuBtn' },
+  { id: 'missionSelectScreen', first: '[data-mission]:not([disabled])', back: 'missionSelectBack' },
   { id: 'oskScreen', first: '[data-key]', back: 'oskDone' },
   { id: 'perkScreen', first: '[data-perk]' },
   { id: 'upgradeScreen', first: '[data-slot]:not([disabled])', back: 'upgradeClose' },

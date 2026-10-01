@@ -58,9 +58,8 @@ const TEX = {};
 function buildTextures() {
   const R = makeRng(1337);
 
-  // Opaque facility surfaces are authored on a small, exact pixel grid.
-  // Soft particles below deliberately use separate filtered textures.
-  buildIndustrialPixelTextures();
+  // High-resolution industrial materials remain fully offline.
+  buildIndustrialTextures();
 
   /* ---- soft radial glow (additive particles, lights, shadows) ------ */
   {
@@ -193,200 +192,80 @@ function buildTextures() {
   buildFacilityTextures();
 }
 
-/* Pixel surfaces use authored colour clusters and one-pixel bevels.
-   Nearest sampling preserves the painted texel grid without grain overlays. */
-function facilityPixelTexture(canvas, repeat = false, isColor = true) {
+/* Smooth mipmapped surfaces: quiet materials, restrained seams, legible signs. */
+function facilityTexture(canvas, repeat = false, isColor = true) {
   const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  texture.generateMipmaps = false;
-  texture.anisotropy = 1;
+  texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true; texture.anisotropy = 4;
   if (repeat) texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
-
-const FACILITY_PIXEL_RAMPS = [
-  { seam: '#182732', shade: '#2b3d49', base: '#405766', inset: '#344b59',
-    edge: '#617e8c', light: '#829ca7', accent: '#77c6cb', title: 'DOCK 07', code: 'CARGO' },
-  { seam: '#242b40', shade: '#424c62', base: '#65758b', inset: '#536379',
-    edge: '#8a9cb0', light: '#b1c1cd', accent: '#b5a6de', title: 'CRYO LAB', code: 'BIO LAB' },
-  { seam: '#282930', shade: '#45434a', base: '#66605b', inset: '#534f50',
-    edge: '#8d8170', light: '#b2a089', accent: '#dfad61', title: 'REACTOR', code: 'POWER' }
+const FACILITY_SURFACES = [
+  { base: '#455965', shade: '#354954', edge: '#607984', accent: '#8bbdbb', title: 'DOCK 07', code: 'CARGO TERMINAL' },
+  { base: '#657581', shade: '#4c5e6c', edge: '#8b9eaa', accent: '#b3b4db', title: 'CRYO LAB', code: 'RESEARCH DIVISION' },
+  { base: '#625f5b', shade: '#4b4c4d', edge: '#85827a', accent: '#d5b281', title: 'REACTOR', code: 'POWER CONTROL' }
 ];
-
-function paintFacilityPlate(g, x, y, ramp, kind) {
-  const rect = (color, px, py, w, h) => { g.fillStyle = color; g.fillRect(x + px, y + py, w, h); };
-  rect(ramp.shade, 1, 1, 30, 30);
-  rect(ramp.base, 2, 2, 27, 27);
-  rect(ramp.edge, 3, 2, 25, 1);
-  rect(ramp.edge, 2, 3, 1, 25);
-  rect(ramp.seam, 3, 29, 27, 1);
-  rect(ramp.seam, 29, 3, 1, 26);
-
-  // Large uninterrupted faces read as metal plates; detail is concentrated
-  // in a few functional clusters rather than scattered across the surface.
-  if (kind === 'vent') {
-    rect(ramp.shade, 6, 8, 20, 15);
-    rect(ramp.seam, 7, 9, 18, 12);
-    for (let row = 0; row < 3; row++) {
-      rect(ramp.edge, 8, 10 + row * 4, 16, 1);
-      rect(ramp.inset, 8, 11 + row * 4, 16, 2);
-    }
-    rect(ramp.accent, 7, 25, 6, 1);
-  } else if (kind === 'lab') {
-    rect(ramp.inset, 6, 7, 20, 18);
-    rect(ramp.shade, 6, 7, 20, 1);
-    rect(ramp.edge, 7, 24, 19, 1);
-    rect(ramp.accent, 8, 10, 2, 8);
-    rect(ramp.accent, 8, 18, 6, 2);
-    rect(ramp.light, 21, 10, 2, 2);
-    rect(ramp.shade, 19, 18, 4, 3);
-  } else {
-    rect(ramp.inset, 6, 8, 20, 15);
-    rect(ramp.shade, 6, 8, 20, 1);
-    rect(ramp.edge, 7, 22, 18, 1);
-    rect(ramp.shade, 13, 10, 6, 2);
-    rect(ramp.seam, 14, 11, 4, 1);
-    rect(ramp.accent, 7, 25, 5, 1);
-    rect(ramp.accent, 14, 25, 2, 1);
-  }
-  for (const [px, py] of [[4, 4], [26, 4], [4, 26], [26, 26]]) {
-    rect(ramp.seam, px, py, 2, 2);
-    rect(ramp.light, px, py, 1, 1);
-  }
-}
-
 function makeFacilityFloor(sector) {
-  const canvas = makeCanvas(64), g = canvas.getContext('2d');
-  const ramp = FACILITY_PIXEL_RAMPS[sector];
-  g.imageSmoothingEnabled = false;
-  g.fillStyle = ramp.seam; g.fillRect(0, 0, 64, 64);
-  for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
-    const kind = sector === 2 ? 'vent' : sector === 1 ? 'lab' : x === y ? 'panel' : 'vent';
-    paintFacilityPlate(g, x * 32, y * 32, ramp, kind);
+  const canvas = makeCanvas(512), g = canvas.getContext('2d'), ramp = FACILITY_SURFACES[sector];
+  g.fillStyle = ramp.shade; g.fillRect(0, 0, 512, 512);
+  for (let y = 0; y < 512; y += 128) for (let x = 0; x < 512; x += 128) {
+    const grad = g.createLinearGradient(x, y, x + 128, y + 128);
+    grad.addColorStop(0, ramp.base); grad.addColorStop(1, ramp.shade);
+    g.fillStyle = grad; g.beginPath(); g.roundRect(x + 1.5, y + 1.5, 125, 125, 3); g.fill();
+    g.strokeStyle = ramp.edge; g.globalAlpha = 0.23; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x + 6, y + 2.5); g.lineTo(x + 121, y + 2.5); g.stroke(); g.globalAlpha = 1;
+    if ((x / 128 + y / 128 * 3 + sector) % 7 === 0) {
+      g.strokeStyle = ramp.shade; g.lineWidth = 1.5; g.strokeRect(x + 25, y + 31, 76, 68);
+      g.fillStyle = ramp.shade; g.beginPath(); g.roundRect(x + 54, y + 40, 20, 3, 1.5); g.fill();
+      g.globalAlpha = 0.38; g.fillStyle = ramp.edge;
+      for (const dx of [20, 108]) { g.beginPath(); g.arc(x + dx, y + 19, 1.3, 0, TAU); g.fill(); }
+      g.globalAlpha = 1;
+    }
   }
-  return facilityPixelTexture(canvas, true);
+  return facilityTexture(canvas, true);
 }
-
-function buildIndustrialPixelTextures() {
+function buildIndustrialTextures() {
   TEX.floor = makeFacilityFloor(0);
-
-  const wall = makeCanvas(64), w = wall.getContext('2d');
-  w.imageSmoothingEnabled = false;
-  const rect = (color, x, y, width, height) => { w.fillStyle = color; w.fillRect(x, y, width, height); };
-  rect('#1c2a37', 0, 0, 64, 64);
-  for (let x = 0; x < 64; x += 32) {
-    rect('#405768', x + 2, 2, 28, 53);
-    rect('#8298a4', x + 3, 2, 26, 1);
-    rect('#627d8d', x + 2, 3, 1, 50);
-    rect('#293e50', x + 28, 4, 2, 50);
-    rect('#293e50', x + 5, 7, 21, 10);
-    rect('#344b5c', x + 6, 8, 19, 8);
-    rect('#8298a4', x + 8, 10, 8, 1);
-    rect('#bfa56b', x + 23, 10, 2, 3);
-    for (const y of [20, 39]) {
-      rect('#1c2a37', x + 2, y, 28, 3);
-      rect('#627d8d', x + 3, y + 3, 26, 1);
-    }
-    rect('#293e50', x + 6, 27, 20, 8);
-    for (let slit = 0; slit < 4; slit++) {
-      rect('#1c2a37', x + 8 + slit * 4, 28, 2, 5);
-      rect('#627d8d', x + 8 + slit * 4, 33, 2, 1);
-    }
-    rect('#344b5c', x + 6, 45, 20, 7);
-    rect('#627d8d', x + 7, 51, 18, 1);
-    rect('#293e50', x + 1, 57, 30, 5);
-    rect('#627d8d', x + 2, 57, 28, 1);
+  const wall = makeCanvas(512), g = wall.getContext('2d');
+  g.fillStyle = '#273a49'; g.fillRect(0, 0, 512, 512);
+  for (let x = 0; x < 512; x += 256) {
+    const gradient = g.createLinearGradient(x, 0, x + 256, 0);
+    gradient.addColorStop(0, '#647c8a'); gradient.addColorStop(0.035, '#536d7d'); gradient.addColorStop(0.88, '#3f5768'); gradient.addColorStop(1, '#2d4454');
+    g.fillStyle = gradient; g.beginPath(); g.roundRect(x + 7, 7, 242, 451, 8); g.fill();
+    g.strokeStyle = '#8ba1ac'; g.lineWidth = 1; g.globalAlpha = 0.65; g.strokeRect(x + 13.5, 13.5, 229, 439); g.globalAlpha = 1;
+    for (const y of [138, 302]) { g.fillStyle = '#273a49'; g.fillRect(x + 9, y, 238, 5); g.fillStyle = '#708693'; g.fillRect(x + 12, y + 5, 232, 1); }
+    g.fillStyle = '#344d5c'; g.beginPath(); g.roundRect(x + 42, 45, 172, 52, 5); g.fill();
+    g.fillStyle = '#aac0cb'; g.font = '500 14px Arial'; g.fillText('SERVICE / 07', x + 56, 68);
+    for (let i = 0; i < 7; i++) { g.fillStyle = '#203442'; g.beginPath(); g.roundRect(x + 48 + i * 24, 200, 9, 48, 4); g.fill(); }
+    g.fillStyle = '#718794'; g.fillRect(x + 24, 477, 208, 2);
   }
-  TEX.wall = facilityPixelTexture(wall, true);
-
-  const hazard = makeCanvas(32), h = hazard.getContext('2d');
-  h.imageSmoothingEnabled = false;
-  // Integer stair-steps, eight pixels per stripe: no anti-aliased diagonals.
-  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-    const yellow = ((x + y) % 16) < 8;
-    h.fillStyle = yellow ? (y < 2 ? '#ecd089' : y > 28 ? '#947343' : '#c9a55d')
-      : (y < 2 ? '#48515a' : '#252f3b');
-    h.fillRect(x, y, 1, 1);
-  }
-  TEX.hazard = facilityPixelTexture(hazard, true);
+  TEX.wall = facilityTexture(wall, true);
+  const hazard = makeCanvas(512), h = hazard.getContext('2d');
+  h.fillStyle = '#303a42'; h.fillRect(0, 0, 512, 512); h.fillStyle = '#c6a45f';
+  for (let x = -512; x < 1024; x += 128) { h.beginPath(); h.moveTo(x, 0); h.lineTo(x + 64, 0); h.lineTo(x - 448, 512); h.lineTo(x - 512, 512); h.closePath(); h.fill(); }
+  const shade = h.createLinearGradient(0, 0, 0, 512); shade.addColorStop(0, 'rgba(255,255,255,.16)'); shade.addColorStop(0.45, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,.2)'); h.fillStyle = shade; h.fillRect(0, 0, 512, 512);
+  TEX.hazard = facilityTexture(hazard, true);
 }
-
-/* Compact 5x7 lettering: floor signs remain true pixel assets too. */
-const FACILITY_PIXEL_FONT = {
-  A:'01110/10001/10001/11111/10001/10001/10001', B:'11110/10001/10001/11110/10001/10001/11110',
-  C:'01111/10000/10000/10000/10000/10000/01111', D:'11110/10001/10001/10001/10001/10001/11110',
-  E:'11111/10000/10000/11110/10000/10000/11111', G:'01111/10000/10000/10111/10001/10001/01110',
-  I:'111/010/010/010/010/010/111', K:'10001/10010/10100/11000/10100/10010/10001',
-  L:'10000/10000/10000/10000/10000/10000/11111', O:'01110/10001/10001/10001/10001/10001/01110',
-  P:'11110/10001/10001/11110/10000/10000/10000', R:'11110/10001/10001/11110/10100/10010/10001',
-  S:'01111/10000/10000/01110/00001/00001/11110', T:'11111/00100/00100/00100/00100/00100/00100',
-  W:'10001/10001/10001/10101/10101/10101/01010', Y:'10001/10001/01010/00100/00100/00100/00100',
-  '0':'01110/10001/10011/10101/11001/10001/01110', '1':'00100/01100/00100/00100/00100/00100/01110',
-  '2':'01110/10001/00001/00010/00100/01000/11111', '3':'11110/00001/00001/01110/00001/00001/11110',
-  '7':'11111/00001/00010/00100/01000/01000/01000', ' ':'000/000/000/000/000/000/000'
-};
-
-function paintFacilityText(g, text, centerX, y, scale = 1) {
-  const glyphs = Array.from(text).map((letter) => (FACILITY_PIXEL_FONT[letter] || FACILITY_PIXEL_FONT[' ']).split('/'));
-  const width = glyphs.reduce((sum, rows) => sum + (rows[0].length + 1) * scale, -scale);
-  let x = Math.floor(centerX - width / 2);
-  for (const rows of glyphs) {
-    for (let row = 0; row < rows.length; row++) for (let column = 0; column < rows[row].length; column++) {
-      if (rows[row][column] === '1') g.fillRect(x + column * scale, y + row * scale, scale, scale);
-    }
-    x += (rows[0].length + 1) * scale;
-  }
-}
-
 function buildFacilityTextures() {
-  TEX.sectorFloor = [TEX.floor, makeFacilityFloor(1), makeFacilityFloor(2)];
-  TEX.sectorMarking = [];
+  TEX.sectorFloor = [TEX.floor, makeFacilityFloor(1), makeFacilityFloor(2)]; TEX.sectorMarking = [];
   for (let sector = 0; sector < 3; sector++) {
-    const ramp = FACILITY_PIXEL_RAMPS[sector];
-    const sign = makeCanvas(128), s = sign.getContext('2d');
-    s.imageSmoothingEnabled = false;
-    s.fillStyle = ramp.accent;
-    for (const [x, y, flipX, flipY] of [[7, 7, 1, 1], [119, 7, -1, 1], [7, 119, 1, -1], [119, 119, -1, -1]]) {
-      s.fillRect(flipX > 0 ? x : x - 21, y, 23, 2);
-      s.fillRect(x, flipY > 0 ? y : y - 21, 2, 23);
-    }
-    s.globalAlpha = 0.4;
-    s.fillRect(15, 15, 98, 1); s.fillRect(15, 112, 98, 1);
-    s.fillRect(15, 16, 1, 96); s.fillRect(112, 16, 1, 96);
-    for (let x = 27; x < 102; x += 8) { s.fillRect(x, 43, 4, 1); s.fillRect(x, 79, 4, 1); }
-    s.globalAlpha = 0.85;
-    paintFacilityText(s, ramp.title, 64, 52, 2);
-    paintFacilityText(s, ramp.code, 64, 69);
-    paintFacilityText(s, 'SECTOR 0' + (sector + 1), 64, 99);
-    for (const x of [46, 62, 78]) {
-      s.fillRect(x, 24, 2, 2); s.fillRect(x - 1, 26, 4, 2); s.fillRect(x - 2, 28, 6, 2);
-    }
-    TEX.sectorMarking.push(facilityPixelTexture(sign));
+    const ramp = FACILITY_SURFACES[sector], sign = makeCanvas(512), g = sign.getContext('2d');
+    g.strokeStyle = ramp.accent; g.lineWidth = 3; g.globalAlpha = 0.7; g.strokeRect(32, 32, 448, 448);
+    g.lineWidth = 1; g.globalAlpha = 0.35; g.strokeRect(46, 46, 420, 420); g.globalAlpha = 1;
+    g.fillStyle = ramp.accent; g.textAlign = 'center'; g.font = '600 57px Arial'; g.fillText(ramp.title, 256, 243);
+    g.font = '500 19px Arial'; g.fillText(ramp.code, 256, 281); g.font = '500 20px Arial'; g.fillText('SECTOR 0' + (sector + 1), 256, 421);
+    g.fillRect(166, 139, 180, 2); g.fillRect(166, 334, 180, 2); TEX.sectorMarking.push(facilityTexture(sign));
   }
-
-  const vent = makeCanvas(32), v = vent.getContext('2d');
-  v.imageSmoothingEnabled = false;
-  const fill = (color, x, y, w, h) => { v.fillStyle = color; v.fillRect(x, y, w, h); };
-  fill('#233440', 0, 0, 32, 32);
-  fill('#7d94a0', 1, 1, 30, 1); fill('#607988', 1, 2, 1, 28);
-  fill('#152531', 30, 2, 1, 29); fill('#152531', 1, 30, 29, 1);
-  fill('#344e5d', 4, 4, 24, 24);
-  for (let y = 6; y < 27; y += 4) {
-    fill('#152531', 6, y, 20, 2); fill('#708995', 6, y + 2, 20, 1);
+  const vent = makeCanvas(512), v = vent.getContext('2d');
+  const gradient = v.createLinearGradient(0, 0, 512, 512); gradient.addColorStop(0, '#7b919c'); gradient.addColorStop(1, '#293e4b');
+  v.fillStyle = gradient; v.fillRect(0, 0, 512, 512); v.fillStyle = '#3b5362'; v.fillRect(16, 16, 480, 480);
+  for (let y = 64; y < 458; y += 48) { v.fillStyle = '#172c39'; v.beginPath(); v.roundRect(54, y, 404, 21, 8); v.fill(); v.fillStyle = '#7d939e'; v.fillRect(60, y + 22, 392, 2); }
+  TEX.vent = facilityTexture(vent);
+  const normal = makeCanvas(512), n = normal.getContext('2d'); n.fillStyle = '#8080ff'; n.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 512; i += 128) {
+    const vertical = n.createLinearGradient(i, 0, i + 4, 0); vertical.addColorStop(0, '#7480fd'); vertical.addColorStop(0.5, '#8c80fd'); vertical.addColorStop(1, '#8080ff'); n.fillStyle = vertical; n.fillRect(i, 0, 4, 512);
+    const horizontal = n.createLinearGradient(0, i, 0, i + 4); horizontal.addColorStop(0, '#8074fd'); horizontal.addColorStop(0.5, '#808cfd'); horizontal.addColorStop(1, '#8080ff'); n.fillStyle = horizontal; n.fillRect(0, i, 512, 4);
   }
-  TEX.vent = facilityPixelTexture(vent);
-
-  // Flat, authored seam normals align exactly with the 32px plate grid.
-  // No high-frequency normal noise or random specular flecks.
-  const normal = makeCanvas(64), n = normal.getContext('2d');
-  n.fillStyle = '#8080ff'; n.fillRect(0, 0, 64, 64);
-  for (let y = 0; y < 64; y += 32) for (let x = 0; x < 64; x += 32) {
-    n.fillStyle = '#7080fd'; n.fillRect(x + 2, y + 3, 1, 25);
-    n.fillStyle = '#9080fd'; n.fillRect(x + 29, y + 3, 1, 25);
-    n.fillStyle = '#8070fd'; n.fillRect(x + 3, y + 2, 25, 1);
-    n.fillStyle = '#8090fd'; n.fillRect(x + 3, y + 29, 25, 1);
-  }
-  TEX.floorNormal = facilityPixelTexture(normal, true, false);
+  TEX.floorNormal = facilityTexture(normal, true, false);
 }
